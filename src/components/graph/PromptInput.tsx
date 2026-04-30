@@ -10,6 +10,8 @@ import {
   Loader2,
   Send,
   MessageSquare,
+  Network,
+  GitBranch,
 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -21,6 +23,11 @@ interface PromptInputProps {
   onResult?: (data: NLPResponse) => void;
   isExpanded: boolean;
   onToggleExpand: () => void;
+}
+
+interface NLPResultPreview {
+  nodeCount: number;
+  edgeCount: number;
 }
 
 const EXAMPLE_PROMPTS = [
@@ -60,6 +67,7 @@ export default function PromptInput({
   const [prompt, setPrompt] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastMessage, setLastMessage] = useState('');
+  const [resultPreview, setResultPreview] = useState<NLPResultPreview | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Focus textarea when expanded
@@ -75,10 +83,15 @@ export default function PromptInput({
 
     setIsProcessing(true);
     setLastMessage('');
+    setResultPreview(null);
 
     try {
       const data = await processNLP(trimmed);
       setLastMessage(data.message || `Generated ${data.nodes.length} nodes and ${data.edges.length} edges`);
+      setResultPreview({
+        nodeCount: data.nodes.length,
+        edgeCount: data.edges.length,
+      });
       toast.success(data.message || 'Graph generated successfully!');
       setPrompt('');
       onResult?.(data);
@@ -161,14 +174,14 @@ export default function PromptInput({
                   }}
                   onKeyDown={handleKeyDown}
                   placeholder="e.g., Elon Musk founded Tesla and leads SpaceX"
-                  className="resize-none min-h-[80px] pr-12 border-gray-200 dark:border-neutral-700 focus:border-teal-400 dark:focus:border-teal-600 focus:ring-teal-400/20 dark:focus:ring-teal-600/20 text-sm bg-gray-50/50 dark:bg-neutral-800/50"
+                  className={`resize-none min-h-[80px] pr-12 border-gray-200 dark:border-neutral-700 focus:border-teal-400 dark:focus:border-teal-600 focus:ring-teal-400/20 dark:focus:ring-teal-600/20 text-sm bg-gray-50/50 dark:bg-neutral-800/50 ${isProcessing ? 'shimmer-loading' : ''}`}
                   disabled={isProcessing}
                 />
                 <Button
                   size="icon"
                   onClick={handleSubmit}
                   disabled={!prompt.trim() || isProcessing}
-                  className="absolute right-2 bottom-2 size-8 rounded-lg bg-teal-600 hover:bg-teal-700 text-white shadow-sm disabled:opacity-40"
+                  className={`absolute right-2 bottom-2 size-8 rounded-lg bg-teal-600 hover:bg-teal-700 text-white shadow-sm disabled:opacity-40 transition-all duration-300 ${isProcessing ? 'pulse-glow' : ''}`}
                 >
                   {isProcessing ? (
                     <Loader2 className="size-4 animate-spin" />
@@ -198,6 +211,29 @@ export default function PromptInput({
                   </button>
                 ))}
               </div>
+
+              {/* Result preview (shows node/edge counts after NLP) */}
+              <AnimatePresence>
+                {resultPreview && !isProcessing && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: 'auto' }}
+                    exit={{ opacity: 0, y: -4, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg border border-teal-100 dark:border-teal-800/30 bg-teal-50/50 dark:bg-teal-900/10"
+                  >
+                    <div className="flex items-center gap-1.5 text-xs text-teal-700 dark:text-teal-300">
+                      <Network className="size-3.5" />
+                      <span className="font-medium">{resultPreview.nodeCount} nodes</span>
+                    </div>
+                    <div className="w-px h-3 bg-teal-200 dark:bg-teal-700/50" />
+                    <div className="flex items-center gap-1.5 text-xs text-teal-700 dark:text-teal-300">
+                      <GitBranch className="size-3.5" />
+                      <span className="font-medium">{resultPreview.edgeCount} edges</span>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Result message */}
               <AnimatePresence>

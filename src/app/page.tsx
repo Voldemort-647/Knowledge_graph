@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ReactFlowProvider,
   useNodesState,
   useEdgesState,
   useReactFlow,
   type Connection,
+  type Edge,
 } from '@xyflow/react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,6 +22,13 @@ import {
   ZoomIn,
   Moon,
   Sun,
+  LayoutGrid,
+  Undo2,
+  Redo2,
+  ArrowDown,
+  ArrowRight,
+  ArrowLeft,
+  ArrowUp,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -38,6 +46,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import GraphCanvas, {
   mapApiToReactFlow,
@@ -52,15 +66,19 @@ import StatsPanel from '@/components/graph/StatsPanel';
 import ExportButton from '@/components/graph/ExportButton';
 import KeyboardShortcutsDialog from '@/components/graph/KeyboardShortcutsDialog';
 import NodeInspector from '@/components/graph/NodeInspector';
+import EdgeContextMenu from '@/components/graph/EdgeContextMenu';
 import PromptInput from '@/components/graph/PromptInput';
 import {
   fetchGraph,
   deleteNode as apiDeleteNode,
   deleteEdge as apiDeleteEdge,
   createEdge,
+  updateEdge,
   clearGraph,
   type NLPResponse,
 } from '@/services/api';
+import { getLayoutedElements, type LayoutDirection } from '@/lib/layout';
+import { useGraphHistory } from '@/store/graph-history';
 
 /* ─── Toolbar button class ─── */
 const toolbarBtnBase =
@@ -75,12 +93,13 @@ const toolbarBtnActive =
 /* ─── Inner Page (needs ReactFlowProvider context) ─── */
 function KnowledgeGraphPage() {
   const [nodes, setNodes, onNodesChange] = useNodesState<CustomNodeType>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [nodeFormOpen, setNodeFormOpen] = useState(false);
   const [edgeFormOpen, setEdgeFormOpen] = useState(false);
   const [nlpExpanded, setNlpExpanded] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [layoutDirection, setLayoutDirection] = useState<LayoutDirection>('LR');
 
   // New state for dialogs and panels
   const [editingNode, setEditingNode] = useState<{
@@ -95,6 +114,26 @@ function KnowledgeGraphPage() {
   const [statsPanelOpen, setStatsPanelOpen] = useState(false);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
 
+  // Edge context menu state
+  const [edgeContextMenu, setEdgeContextMenu] = useState<{
+    edge: Edge;
+    position: { x: number; y: number };
+  } | null>(null);
+
+  // Undo/redo history
+  const {
+    pushSnapshot,
+    undo: historyUndo,
+    redo: historyRedo,
+    canUndo: historyCanUndo,
+    canRedo: historyCanRedo,
+    clearHistory,
+  } = useGraphHistory();
+
+  // Empty state parallax ref
+  const emptyStateRef = useRef<HTMLDivElement>(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
   const { fitView, setCenter, getNodes } = useReactFlow();
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
@@ -104,6 +143,11 @@ function KnowledgeGraphPage() {
     () => nodes.filter((n) => n.selected),
     [nodes]
   );
+
+  // Push snapshot helper
+  const pushCurrentSnapshot = useCallback(() => {
+    pushSnapshot({ nodes: [...nodes], edges: [...edges] });
+  }, [nodes, edges, pushSnapshot]);
 
   // Load graph from API on mount
   const loadGraph = useCallback(async () => {
@@ -127,6 +171,7 @@ function KnowledgeGraphPage() {
   // Handle node deletion
   const handleDeleteNode = useCallback(
     async (id: string) => {
+      pushCurrentSnapshot();
       try {
         await apiDeleteNode(id);
         setNodes((nds) => nds.filter((n) => n.id !== id));
@@ -135,12 +180,13 @@ function KnowledgeGraphPage() {
         toast.error('Failed to delete node');
       }
     },
-    [setNodes, setEdges]
+    [setNodes, setEdges, pushCurrentSnapshot]
   );
 
   // Handle edge deletion
   const handleDeleteEdge = useCallback(
     async (id: string) => {
+      pushCurrentSnapshot();
       try {
         await apiDeleteEdge(id);
         setEdges((eds) => eds.filter((e) => e.id !== id));
@@ -148,7 +194,7 @@ function KnowledgeGraphPage() {
         toast.error('Failed to delete edge');
       }
     },
-    [setEdges]
+    [setEdges, pushCurrentSnapshot]
   );
 
   // Handle new connection from handle drag — open ConnectionDialog
@@ -180,6 +226,7 @@ function KnowledgeGraphPage() {
   const handleConnectionConfirm = useCallback(
     async (relationship: string) => {
       if (!connectionData) return;
+      pushCurrentSnapshot();
       try {
         await createEdge({
           sourceNodeId: connectionData.source,
@@ -194,7 +241,7 @@ function KnowledgeGraphPage() {
       setConnectionData(null);
       setConnectionDialogOpen(false);
     },
-    [connectionData, loadGraph]
+    [connectionData, loadGraph, pushCurrentSnapshot]
   );
 
   // Handle connection dialog close — remove any temp edge
@@ -233,10 +280,11 @@ function KnowledgeGraphPage() {
   // Handle node deleted from edit dialog
   const handleNodeDeleted = useCallback(
     (id: string) => {
+      pushCurrentSnapshot();
       setNodes((nds) => nds.filter((n) => n.id !== id));
       setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
     },
-    [setNodes, setEdges]
+    [setNodes, setEdges, pushCurrentSnapshot]
   );
 
   // Handle search node select → center on node
@@ -283,6 +331,7 @@ function KnowledgeGraphPage() {
   // Handle NLP result
   const handleNLPResult = useCallback(
     (data: NLPResponse) => {
+      pushCurrentSnapshot();
       const { nodes: rfNodes, edges: rfEdges } = mapApiToReactFlow({
         nodes: data.nodes,
         edges: data.edges,
@@ -290,8 +339,119 @@ function KnowledgeGraphPage() {
       setNodes(rfNodes);
       setEdges(rfEdges);
     },
-    [setNodes, setEdges]
+    [setNodes, setEdges, pushCurrentSnapshot]
   );
+
+  // Handle node drag end → push snapshot
+  const handleNodesChangeWrapper = useCallback(
+    (changes: Parameters<typeof onNodesChange>[0]) => {
+      onNodesChange(changes);
+      // Detect position changes (drag end) to push history
+      const positionChanges = changes.filter(
+        (c) => c.type === 'position' && c.dragging === false
+      );
+      if (positionChanges.length > 0) {
+        // Push snapshot on next tick so we have the latest positions
+        setTimeout(() => {
+          pushSnapshot({ nodes: [...getNodes() as CustomNodeType[]], edges: [...edges] });
+        }, 50);
+      }
+    },
+    [onNodesChange, edges, pushSnapshot, getNodes]
+  );
+
+  // Auto-layout handler
+  const handleAutoLayout = useCallback(() => {
+    if (nodes.length === 0) return;
+    pushCurrentSnapshot();
+    const { nodes: layoutedNodes } = getLayoutedElements(nodes, edges, layoutDirection);
+    setNodes(layoutedNodes);
+    // Fit view after layout
+    setTimeout(() => {
+      fitView({ padding: 0.3, duration: 400 });
+    }, 50);
+    toast.success(`Graph auto-layout applied (${layoutDirection})`);
+  }, [nodes, edges, layoutDirection, setNodes, fitView, pushCurrentSnapshot]);
+
+  // Undo handler
+  const handleUndo = useCallback(() => {
+    const snapshot = historyUndo();
+    if (snapshot) {
+      setNodes(snapshot.nodes);
+      setEdges(snapshot.edges);
+    }
+  }, [historyUndo, setNodes, setEdges]);
+
+  // Redo handler
+  const handleRedo = useCallback(() => {
+    const snapshot = historyRedo();
+    if (snapshot) {
+      setNodes(snapshot.nodes);
+      setEdges(snapshot.edges);
+    }
+  }, [historyRedo, setNodes, setEdges]);
+
+  // Edge context menu handlers
+  const handleEdgeContextMenu = useCallback(
+    (event: React.MouseEvent, edge: Edge) => {
+      setEdgeContextMenu({
+        edge,
+        position: { x: event.clientX, y: event.clientY },
+      });
+    },
+    []
+  );
+
+  const handleEdgeLabelEdit = useCallback(
+    async (edgeId: string, newLabel: string) => {
+      pushCurrentSnapshot();
+      try {
+        await updateEdge({ id: edgeId, relationship: newLabel });
+        // Update edge label in local state
+        setEdges((eds) =>
+          eds.map((e) =>
+            e.id === edgeId
+              ? { ...e, label: newLabel }
+              : e
+          )
+        );
+        toast.success('Edge label updated');
+      } catch {
+        toast.error('Failed to update edge label');
+      }
+    },
+    [setEdges, pushCurrentSnapshot]
+  );
+
+  const handleEdgeDelete = useCallback(
+    async (edgeId: string) => {
+      pushCurrentSnapshot();
+      try {
+        await apiDeleteEdge(edgeId);
+        setEdges((eds) => eds.filter((e) => e.id !== edgeId));
+        toast.success('Edge deleted');
+      } catch {
+        toast.error('Failed to delete edge');
+      }
+    },
+    [setEdges, pushCurrentSnapshot]
+  );
+
+  const closeEdgeContextMenu = useCallback(() => {
+    setEdgeContextMenu(null);
+  }, []);
+
+  // Empty state parallax effect
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (nodes.length > 0 || isLoading) return;
+      const x = (e.clientX / window.innerWidth - 0.5) * 2;
+      const y = (e.clientY / window.innerHeight - 0.5) * 2;
+      setMousePos({ x, y });
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, [nodes.length, isLoading]);
 
   // Keyboard shortcuts handler
   useEffect(() => {
@@ -310,6 +470,11 @@ function KnowledgeGraphPage() {
       }
 
       if (e.key === 'Escape') {
+        // Close edge context menu first
+        if (edgeContextMenu) {
+          closeEdgeContextMenu();
+          return;
+        }
         // Deselect all
         setNodes((nds) => nds.map((n) => ({ ...n, selected: false })));
         setEdges((eds) => eds.map((ed) => ({ ...ed, selected: false })));
@@ -330,6 +495,27 @@ function KnowledgeGraphPage() {
         return;
       }
 
+      // Ctrl+Z — undo
+      if (e.ctrlKey && !e.shiftKey && e.key === 'z') {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      // Ctrl+Shift+Z — redo
+      if (e.ctrlKey && e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      // L — auto layout
+      if (e.key === 'l' && !isTyping && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        handleAutoLayout();
+        return;
+      }
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (isTyping) return;
         const selNodes = nodes.filter((n) => n.selected);
@@ -345,7 +531,7 @@ function KnowledgeGraphPage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nodes, edges, handleDeleteNode, handleDeleteEdge, setNodes, setEdges]);
+  }, [nodes, edges, handleDeleteNode, handleDeleteEdge, setNodes, setEdges, handleUndo, handleRedo, handleAutoLayout, edgeContextMenu, closeEdgeContextMenu]);
 
   // Listen for node-edit-click custom event from GraphCanvas
   useEffect(() => {
@@ -376,10 +562,12 @@ function KnowledgeGraphPage() {
 
   // Clear all — including database
   const handleClearAll = useCallback(async () => {
+    pushCurrentSnapshot();
     try {
       await clearGraph();
       setNodes([]);
       setEdges([]);
+      clearHistory();
       setClearConfirmOpen(false);
       toast.success('Graph cleared successfully');
     } catch {
@@ -388,7 +576,25 @@ function KnowledgeGraphPage() {
       setEdges([]);
       setClearConfirmOpen(false);
     }
-  }, [setNodes, setEdges]);
+  }, [setNodes, setEdges, clearHistory, pushCurrentSnapshot]);
+
+  // Layout direction icons
+  const layoutDirIcons: Record<LayoutDirection, typeof ArrowRight> = {
+    LR: ArrowRight,
+    RL: ArrowLeft,
+    TB: ArrowDown,
+    BT: ArrowUp,
+  };
+
+  const layoutDirLabels: Record<LayoutDirection, string> = {
+    LR: 'Left to Right',
+    RL: 'Right to Left',
+    TB: 'Top to Bottom',
+    BT: 'Bottom to Top',
+  };
+
+  const canUndo = historyCanUndo();
+  const canRedo = historyCanRedo();
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-stone-50 to-gray-100 dark:from-neutral-950 dark:via-[#0f1419] dark:to-neutral-950">
@@ -467,14 +673,26 @@ function KnowledgeGraphPage() {
           <GraphCanvas
             nodes={nodes}
             edges={edges}
-            onNodesChange={onNodesChange}
+            onNodesChange={handleNodesChangeWrapper}
             onEdgesChange={onEdgesChange}
             onDeleteNode={handleDeleteNode}
             onDeleteEdge={handleDeleteEdge}
             onConnectNew={handleConnect}
             onNodeDoubleClick={handleNodeDoubleClick}
+            onEdgeContextMenu={handleEdgeContextMenu}
           />
         )}
+
+        {/* ─── Edge Context Menu ─── */}
+        <EdgeContextMenu
+          key={edgeContextMenu?.edge?.id || 'none'}
+          edge={edgeContextMenu?.edge || null}
+          position={edgeContextMenu?.position || { x: 0, y: 0 }}
+          visible={!!edgeContextMenu}
+          onEdit={handleEdgeLabelEdit}
+          onDelete={handleEdgeDelete}
+          onClose={closeEdgeContextMenu}
+        />
 
         {/* ─── Search Panel ─── */}
         <AnimatePresence>
@@ -507,6 +725,102 @@ function KnowledgeGraphPage() {
               className="absolute right-4 top-4 z-20 flex flex-col gap-1.5"
             >
               <TooltipProvider delayDuration={300}>
+                {/* Undo */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className={`${toolbarBtnBase} ${canUndo ? toolbarBtnInactive : 'opacity-40 cursor-not-allowed'}`}
+                        onClick={handleUndo}
+                        disabled={!canUndo}
+                      >
+                        <Undo2 className="size-4" />
+                      </Button>
+                    </motion.div>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Undo (Ctrl+Z)</TooltipContent>
+                </Tooltip>
+
+                {/* Redo */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className={`${toolbarBtnBase} ${canRedo ? toolbarBtnInactive : 'opacity-40 cursor-not-allowed'}`}
+                        onClick={handleRedo}
+                        disabled={!canRedo}
+                      >
+                        <Redo2 className="size-4" />
+                      </Button>
+                    </motion.div>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Redo (Ctrl+Shift+Z)</TooltipContent>
+                </Tooltip>
+
+                {/* Auto Layout */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className={`${toolbarBtnBase} ${toolbarBtnInactive}`}
+                        onClick={handleAutoLayout}
+                        disabled={nodes.length === 0}
+                      >
+                        <LayoutGrid className="size-4" />
+                      </Button>
+                    </motion.div>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Auto Layout (L)</TooltipContent>
+                </Tooltip>
+
+                {/* Layout Direction Dropdown */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            className={`${toolbarBtnBase} ${toolbarBtnInactive}`}
+                            disabled={nodes.length === 0}
+                          >
+                            {(() => {
+                              const DirIcon = layoutDirIcons[layoutDirection];
+                              return <DirIcon className="size-4" />;
+                            })()}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          {(Object.keys(layoutDirLabels) as LayoutDirection[]).map((dir) => {
+                            const DirIcon = layoutDirIcons[dir];
+                            return (
+                              <DropdownMenuItem
+                                key={dir}
+                                onClick={() => setLayoutDirection(dir)}
+                                className={layoutDirection === dir ? 'bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300' : ''}
+                              >
+                                <DirIcon className="size-4 mr-2" />
+                                {layoutDirLabels[dir]}
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </motion.div>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Layout Direction</TooltipContent>
+                </Tooltip>
+
+                {/* Divider */}
+                <div className="h-px bg-gray-200/60 dark:bg-neutral-700/40 mx-1.5" />
+
                 {/* Search */}
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -619,17 +933,21 @@ function KnowledgeGraphPage() {
         {/* ─── Empty State with Animated Illustration ─── */}
         {!isLoading && nodes.length === 0 && (
           <motion.div
+            ref={emptyStateRef}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5 }}
             className="absolute inset-0 flex items-center justify-center pointer-events-none z-10"
           >
             <div className="text-center space-y-4 max-w-md px-4">
-              {/* Animated floating nodes illustration */}
+              {/* Animated floating nodes illustration with parallax */}
               <div className="relative h-24 mx-auto max-w-[240px]">
                 {/* Central node */}
                 <motion.div
-                  animate={{ y: [0, -8, 0] }}
+                  animate={{
+                    y: [0, -8, 0],
+                    x: mousePos.x * 3,
+                  }}
                   transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
                   className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
                 >
@@ -640,9 +958,16 @@ function KnowledgeGraphPage() {
 
                 {/* Satellite node 1 */}
                 <motion.div
-                  animate={{ y: [0, -6, 0], x: [0, 2, 0] }}
+                  animate={{
+                    y: [0, -6, 0],
+                    x: [0, 2, 0],
+                  }}
                   transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
                   className="absolute left-2 top-1"
+                  style={{
+                    transform: `translate(${mousePos.x * -5}px, ${mousePos.y * -5}px)`,
+                    transition: 'transform 0.3s ease-out',
+                  }}
                 >
                   <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center shadow-md">
                     <span className="text-[10px] font-bold text-white">A</span>
@@ -651,9 +976,16 @@ function KnowledgeGraphPage() {
 
                 {/* Satellite node 2 */}
                 <motion.div
-                  animate={{ y: [0, 6, 0], x: [0, -2, 0] }}
+                  animate={{
+                    y: [0, 6, 0],
+                    x: [0, -2, 0],
+                  }}
                   transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
                   className="absolute right-2 bottom-1"
+                  style={{
+                    transform: `translate(${mousePos.x * 6}px, ${mousePos.y * 4}px)`,
+                    transition: 'transform 0.3s ease-out',
+                  }}
                 >
                   <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-500 flex items-center justify-center shadow-md">
                     <span className="text-[10px] font-bold text-white">B</span>
@@ -665,6 +997,10 @@ function KnowledgeGraphPage() {
                   animate={{ y: [0, 5, 0] }}
                   transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
                   className="absolute right-4 top-2"
+                  style={{
+                    transform: `translate(${mousePos.x * -4}px, ${mousePos.y * 6}px)`,
+                    transition: 'transform 0.3s ease-out',
+                  }}
                 >
                   <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm">
                     <span className="text-[9px] font-bold text-white">C</span>
@@ -700,7 +1036,8 @@ function KnowledgeGraphPage() {
                 </svg>
               </div>
 
-              <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
+              {/* Gradient text heading */}
+              <h2 className="text-lg font-semibold gradient-text">
                 Your graph is empty
               </h2>
               <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
@@ -717,7 +1054,7 @@ function KnowledgeGraphPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-teal-200 dark:border-teal-800/50 text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 gap-2"
+                  className="border-teal-200 dark:border-teal-800/50 text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 gap-2 pulse-glow"
                   onClick={() => setNlpExpanded(true)}
                 >
                   <ZoomIn className="size-4" />

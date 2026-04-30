@@ -1,6 +1,6 @@
 'use client';
 
-import { Keyboard, Delete, FilePlus, GitBranch, X, HelpCircle } from 'lucide-react';
+import { Keyboard, Delete, FilePlus, GitBranch, X, HelpCircle, Undo2, Redo2, LayoutGrid } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -38,6 +38,21 @@ const SHORTCUTS: ShortcutItem[] = [
     icon: <GitBranch className="size-4 text-emerald-500" />,
   },
   {
+    keys: ['L'],
+    label: 'Apply auto-layout to graph',
+    icon: <LayoutGrid className="size-4 text-amber-500" />,
+  },
+  {
+    keys: ['Ctrl', 'Z'],
+    label: 'Undo last action',
+    icon: <Undo2 className="size-4 text-violet-500" />,
+  },
+  {
+    keys: ['Ctrl', 'Shift', 'Z'],
+    label: 'Redo last action',
+    icon: <Redo2 className="size-4 text-violet-400" />,
+  },
+  {
     keys: ['?'],
     label: 'Show this shortcuts dialog',
     icon: <HelpCircle className="size-4 text-violet-500" />,
@@ -68,20 +83,20 @@ export default function KeyboardShortcutsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-1">
+        <div className="space-y-1 max-h-[400px] overflow-y-auto">
           {SHORTCUTS.map((shortcut, index) => (
             <div key={shortcut.label}>
-              <div className="flex items-center gap-3 py-2.5 px-1 rounded-lg hover:bg-gray-50 transition-colors">
+              <div className="flex items-center gap-3 py-2.5 px-1 rounded-lg hover:bg-gray-50 dark:hover:bg-neutral-800/50 transition-colors">
                 <div className="flex-shrink-0">{shortcut.icon}</div>
-                <p className="text-sm text-gray-700 flex-1">{shortcut.label}</p>
+                <p className="text-sm text-gray-700 dark:text-gray-200 flex-1">{shortcut.label}</p>
                 <div className="flex items-center gap-1 flex-shrink-0">
                   {shortcut.keys.map((key, ki) => (
                     <span key={key} className="flex items-center gap-1">
-                      <kbd className="inline-flex items-center justify-center h-6 px-2 text-[11px] font-mono font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-md shadow-sm">
+                      <kbd className="inline-flex items-center justify-center h-6 px-2 text-[11px] font-mono font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-neutral-700 border border-gray-200 dark:border-neutral-600 rounded-md shadow-sm">
                         {key}
                       </kbd>
                       {ki < shortcut.keys.length - 1 && (
-                        <span className="text-gray-300 text-xs">+</span>
+                        <span className="text-gray-300 dark:text-neutral-600 text-xs">+</span>
                       )}
                     </span>
                   ))}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -15,6 +15,7 @@ import {
   type OnNodesChange,
   type OnEdgesChange,
   type NodeMouseHandler,
+  type EdgeMouseHandler,
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -49,6 +50,7 @@ interface GraphCanvasProps {
   onDeleteEdge?: (id: string) => void;
   onConnectNew?: (connection: Connection) => void;
   onNodeDoubleClick?: (nodeId: string) => void;
+  onEdgeContextMenu?: (event: React.MouseEvent, edge: Edge) => void;
 }
 
 /* ─── Color helpers ─── */
@@ -71,18 +73,18 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
 
   const nodeContent = (
     <div className="group relative kg-node-enter">
-      {/* Glow effect behind node */}
+      {/* Glow effect behind node — softer, wider spread */}
       <div
-        className="absolute -inset-1 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+        className="absolute -inset-2 rounded-2xl opacity-0 group-hover:opacity-100 transition-all duration-500 pointer-events-none"
         style={{
-          boxShadow: `0 0 24px 6px ${hexToRgba(nodeColor, 0.25)}`,
+          boxShadow: `0 0 32px 8px ${hexToRgba(nodeColor, 0.18)}`,
         }}
       />
 
       <div
         className={`
           relative flex items-center gap-3 rounded-xl px-4 py-3 shadow-md
-          transition-all duration-200 cursor-grab active:cursor-grabbing
+          transition-all duration-300 cursor-grab active:cursor-grabbing
           hover:shadow-lg
           bg-white dark:bg-neutral-800/90 dark:border-neutral-700/50
           ${selected
@@ -93,8 +95,10 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
         style={{
           borderLeft: `4px solid ${nodeColor}`,
           borderRadius: '12px',
+          // Subtle gradient background
+          background: `linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(249,250,251,0.9) 100%)`,
           ...(selected ? {
-            boxShadow: `0 0 0 3px ${hexToRgba(nodeColor, 0.5)}, 0 0 20px 4px ${hexToRgba(nodeColor, 0.15)}`,
+            boxShadow: `0 0 0 3px ${hexToRgba(nodeColor, 0.5)}, 0 0 24px 6px ${hexToRgba(nodeColor, 0.12)}`,
           } : {}),
           // @ts-expect-error CSS custom property for ring color
           '--tw-ring-color': selected ? nodeColor : undefined,
@@ -116,7 +120,7 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
         <Handle
           type="target"
           position={Position.Left}
-          className="!w-2.5 !h-2.5 !border-2 !rounded-full"
+          className="!w-2.5 !h-2.5 !border-2 !rounded-full handle-animate"
           style={{
             backgroundColor: nodeColor,
             borderColor: 'white',
@@ -179,7 +183,7 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
         <Handle
           type="source"
           position={Position.Right}
-          className="!w-2.5 !h-2.5 !border-2 !rounded-full"
+          className="!w-2.5 !h-2.5 !border-2 !rounded-full handle-animate"
           style={{
             backgroundColor: nodeColor,
             borderColor: 'white',
@@ -226,6 +230,7 @@ export default function GraphCanvas({
   onDeleteEdge,
   onConnectNew,
   onNodeDoubleClick,
+  onEdgeContextMenu,
 }: GraphCanvasProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rfRef = useRef<HTMLDivElement>(null);
@@ -334,6 +339,17 @@ export default function GraphCanvas({
     [onNodeDoubleClick]
   );
 
+  // Handle edge right-click context menu
+  const handleEdgeContextMenu: EdgeMouseHandler = useCallback(
+    (event, edge) => {
+      event.preventDefault();
+      if (onEdgeContextMenu) {
+        onEdgeContextMenu(event as unknown as React.MouseEvent, edge);
+      }
+    },
+    [onEdgeContextMenu]
+  );
+
   return (
     <div ref={rfRef} className="w-full h-full">
       <ReactFlow
@@ -343,6 +359,7 @@ export default function GraphCanvas({
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
         onNodeDoubleClick={handleNodeDoubleClick}
+        onEdgeContextMenu={handleEdgeContextMenu}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.3 }}

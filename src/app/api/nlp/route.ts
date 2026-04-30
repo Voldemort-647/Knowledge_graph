@@ -4,25 +4,23 @@ import ZAI from 'z-ai-web-dev-sdk';
 
 const NLP_SYSTEM_PROMPT = `You are a knowledge graph extraction engine. Given a natural language description of relationships, extract entities and relationships into a structured JSON format.
 
-You MUST respond with ONLY valid JSON (no markdown, no code blocks, no explanation). The JSON must follow this exact structure:
+Examples:
 
-{
-  "nodes": [
-    { "label": "Entity Name", "imageUrl": null }
-  ],
-  "edges": [
-    { "source": "Source Entity Name", "target": "Target Entity Name", "relationship": "relationship_type" }
-  ]
-}
+Input: "Elon Musk founded Tesla and leads SpaceX"
+Output: {"nodes":[{"label":"Elon Musk","imageUrl":null},{"label":"Tesla","imageUrl":null},{"label":"SpaceX","imageUrl":null}],"edges":[{"source":"Elon Musk","target":"Tesla","relationship":"founded"},{"source":"Elon Musk","target":"SpaceX","relationship":"leads"}]}
+
+Input: "Python is used for AI and web development"
+Output: {"nodes":[{"label":"Python","imageUrl":null},{"label":"AI","imageUrl":null},{"label":"web development","imageUrl":null}],"edges":[{"source":"Python","target":"AI","relationship":"used_for"},{"source":"Python","target":"web development","relationship":"used_for"}]}
 
 Rules:
-- Extract all entities mentioned as nodes
-- Extract all relationships as edges
-- Use the exact entity names as written (case-sensitive matching)
-- Keep relationship labels short and descriptive (1-3 words)
+- Extract ALL entities mentioned as nodes (people, organizations, concepts, technologies)
+- Extract ALL relationships as directed edges
+- Use the EXACT entity names as written (case-sensitive matching for deduplication)
+- Keep relationship labels short and descriptive (1-3 words, use underscores for multi-word: e.g., "works_at")
 - Use null for imageUrl if no image is mentioned
-- If the input is ambiguous, make reasonable assumptions
-- Return valid JSON only, no other text`;
+- If the input is ambiguous, make reasonable assumptions based on common knowledge
+- For bi-directional relationships, create two separate edges
+- Return ONLY valid JSON, no markdown, no code blocks, no explanation`;
 
 export async function POST(request: NextRequest) {
   try {
@@ -42,7 +40,7 @@ export async function POST(request: NextRequest) {
     const completion = await zai.chat.completions.create({
       messages: [
         {
-          role: 'assistant',
+          role: 'system',
           content: NLP_SYSTEM_PROMPT,
         },
         {
