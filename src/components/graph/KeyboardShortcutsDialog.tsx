@@ -1,6 +1,6 @@
 'use client';
 
-import { Keyboard, Delete, FilePlus, GitBranch, X, HelpCircle, Undo2, Redo2, LayoutGrid } from 'lucide-react';
+import { Keyboard, Delete, FilePlus, GitBranch, X, HelpCircle, Undo2, Redo2, LayoutGrid, RotateCcw } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
+import { Button } from '@/components/ui/button';
+import { useOnboardingStore } from '@/store/onboarding-store';
 
 interface KeyboardShortcutsDialogProps {
   open: boolean;
@@ -105,6 +107,23 @@ export default function KeyboardShortcutsDialog({
               {index < SHORTCUTS.length - 1 && <Separator />}
             </div>
           ))}
+        </div>
+
+        {/* Restart Tutorial */}
+        <Separator />
+        <div className="pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-2 text-gray-600 dark:text-gray-300 hover:text-teal-600 dark:hover:text-teal-400 hover:border-teal-300 dark:hover:border-teal-700"
+            onClick={() => {
+              useOnboardingStore.getState().resetForRestart();
+              onOpenChange(false);
+            }}
+          >
+            <RotateCcw className="size-4" />
+            Restart Tutorial
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

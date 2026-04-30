@@ -62,6 +62,7 @@ import GraphCanvas, {
   mapApiToReactFlow,
   type CustomNodeType,
 } from '@/components/graph/GraphCanvas';
+import SelectionInfoBar from '@/components/graph/SelectionInfoBar';
 import NodeForm from '@/components/graph/NodeForm';
 import EdgeForm from '@/components/graph/EdgeForm';
 import NodeEditDialog from '@/components/graph/NodeEditDialog';
@@ -72,10 +73,13 @@ import ExportButton from '@/components/graph/ExportButton';
 import KeyboardShortcutsDialog from '@/components/graph/KeyboardShortcutsDialog';
 import NodeInspector from '@/components/graph/NodeInspector';
 import EdgeContextMenu from '@/components/graph/EdgeContextMenu';
+import type { EdgeStyleData } from '@/components/graph/EdgeStylePicker';
 import PromptInput from '@/components/graph/PromptInput';
 import NodePalette from '@/components/graph/NodePalette';
 import DropZone from '@/components/graph/DropZone';
 import TemplateDialog from '@/components/graph/TemplateDialog';
+import ShareButton, { ImportFromUrlDialog } from '@/components/graph/ShareButton';
+import OnboardingTutorial from '@/components/graph/OnboardingTutorial';
 import {
   fetchGraph,
   deleteNode as apiDeleteNode,
@@ -88,6 +92,17 @@ import {
 import { getLayoutedElements, type LayoutDirection } from '@/lib/layout';
 import { useGraphHistory } from '@/store/graph-history';
 import { GRAPH_TEMPLATES } from '@/lib/templates';
+import {
+  getSharedGraphFromCurrentUrl,
+  clearSharedHash,
+  type SharedGraphData,
+} from '@/lib/graph-sharing';
+import { useGroupStore } from '@/store/group-store';
+import { useOnboardingStore } from '@/store/onboarding-store';
+import {
+  getNextGroupColor,
+  generateGroupLabel,
+} from '@/lib/groups';
 
 /* ─── Toolbar button class ─── */
 const toolbarBtnBase =
@@ -129,6 +144,10 @@ function KnowledgeGraphPage() {
   // Feature 2: Template dialog state
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
 
+  // URL sharing state
+  const [sharedGraphData, setSharedGraphData] = useState<SharedGraphData | null>(null);
+  const [importUrlDialogOpen, setImportUrlDialogOpen] = useState(false);
+
   // Feature 5: Zoom level state
   const [zoomLevel, setZoomLevel] = useState(1);
   const [showMiniMap, setShowMiniMap] = useState(true);
@@ -160,11 +179,32 @@ function KnowledgeGraphPage() {
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
 
-  // Compute selected nodes from React Flow state
+  // Compute selected nodes/edges from React Flow state
   const selectedNodes = useMemo(
     () => nodes.filter((n) => n.selected),
     [nodes]
   );
+  const selectedEdges = useMemo(
+    () => edges.filter((e) => e.selected),
+    [edges]
+  );
+  const selectedNodeCount = selectedNodes.length;
+  const selectedEdgeCount = selectedEdges.length;
+  const showSelectionBar = selectedNodeCount + selectedEdgeCount >= 2;
+
+  // Group store
+  const { groups, addGroup } = useGroupStore();
+
+  // Onboarding: auto-start on first visit
+  const { hasCompletedOnboarding, startOnboarding } = useOnboardingStore();
+  useEffect(() => {
+    if (!hasCompletedOnboarding) {
+      const timer = setTimeout(() => {
+        startOnboarding();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [hasCompletedOnboarding, startOnboarding]);
 
   // Push snapshot helper
   const pushCurrentSnapshot = useCallback(() => {
@@ -185,6 +225,26 @@ function KnowledgeGraphPage() {
       setIsLoading(false);
     }
   }, [setNodes, setEdges]);
+
+  // Check for shared graph in URL hash on mount
+  useEffect(() => {
+    const sharedData = getSharedGraphFromCurrentUrl();
+    if (sharedData && sharedData.nodes.length > 0) {
+      setSharedGraphData(sharedData);
+      // Small delay so the page loads first
+      const timer = setTimeout(() => {
+        setImportUrlDialogOpen(true);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  // Handle import from shared URL
+  const handleImportFromUrl = useCallback(async () => {
+    clearSharedHash();
+    setSharedGraphData(null);
+    await loadGraph();
+  }, [loadGraph]);
 
   useEffect(() => {
     loadGraph();
@@ -459,6 +519,55 @@ function KnowledgeGraphPage() {
     [setEdges, pushCurrentSnapshot]
   );
 
+  // Handle edge style change from context menu
+  const handleEdgeStyleChange = useCallback(
+    async (edgeId: string, styleData: EdgeStyleData) => {
+      pushCurrentSnapshot();
+      try {
+        await updateEdge({
+          id: edgeId,
+          edgeType: styleData.edgeType,
+          animated: styleData.animated,
+          lineStyle: styleData.lineStyle,
+          thickness: styleData.thickness,
+        });
+        // Update edge visually in local state
+        const dashArray =
+          styleData.lineStyle === 'dashed'
+            ? '8 4'
+            : styleData.lineStyle === 'dotted'
+              ? '2 4'
+              : undefined;
+        setEdges((eds) =>
+          eds.map((e) =>
+            e.id === edgeId
+              ? {
+                  ...e,
+                  type: styleData.edgeType,
+                  animated: styleData.animated,
+                  style: {
+                    stroke: '#0d9488',
+                    strokeWidth: styleData.thickness,
+                    ...(dashArray ? { strokeDasharray: dashArray } : {}),
+                  },
+                  data: {
+                    ...e.data,
+                    edgeType: styleData.edgeType,
+                    lineStyle: styleData.lineStyle,
+                    thickness: styleData.thickness,
+                  },
+                }
+              : e
+          )
+        );
+        toast.success('Edge style updated');
+      } catch {
+        toast.error('Failed to update edge style');
+      }
+    },
+    [setEdges, pushCurrentSnapshot]
+  );
+
   const closeEdgeContextMenu = useCallback(() => {
     setEdgeContextMenu(null);
   }, []);
@@ -634,6 +743,55 @@ function KnowledgeGraphPage() {
     fitView({ padding: 0.3, duration: 300 });
   }, [fitView]);
 
+  // Batch delete selected nodes and edges
+  const handleBatchDelete = useCallback(async () => {
+    const selNodes = nodes.filter((n) => n.selected);
+    const selEdges = edges.filter((e) => e.selected);
+    if (selNodes.length === 0 && selEdges.length === 0) return;
+
+    pushCurrentSnapshot();
+    try {
+      // Delete all selected nodes (and their connected edges)
+      await Promise.allSettled(selNodes.map((n) => apiDeleteNode(n.id)));
+      // Delete selected edges that weren't already removed by node deletion
+      const deletedNodeIds = new Set(selNodes.map((n) => n.id));
+      const remainingSelEdges = selEdges.filter(
+        (e) => !deletedNodeIds.has(e.source) && !deletedNodeIds.has(e.target)
+      );
+      await Promise.allSettled(remainingSelEdges.map((e) => apiDeleteEdge(e.id)));
+
+      // Update local state
+      setNodes((nds) => nds.filter((n) => !n.selected));
+      setEdges((eds) => eds.filter((e) => !e.selected && !deletedNodeIds.has(e.source) && !deletedNodeIds.has(e.target)));
+
+      toast.success(`Deleted ${selNodes.length} node${selNodes.length !== 1 ? 's' : ''} and ${selEdges.length} edge${selEdges.length !== 1 ? 's' : ''}`);
+    } catch {
+      toast.error('Failed to delete some items');
+    }
+  }, [nodes, edges, setNodes, setEdges, pushCurrentSnapshot]);
+
+  // Deselect all nodes and edges
+  const handleDeselectAll = useCallback(() => {
+    setNodes((nds) => nds.map((n) => ({ ...n, selected: false })));
+    setEdges((eds) => eds.map((e) => ({ ...e, selected: false })));
+  }, [setNodes, setEdges]);
+
+  // Group selected nodes
+  const handleGroupSelection = useCallback(() => {
+    const selNodes = nodes.filter((n) => n.selected);
+    if (selNodes.length < 2) return;
+
+    const usedColors = Object.values(groups).map((g) => g.color);
+    const existingLabels = Object.values(groups).map((g) => g.label);
+    const color = getNextGroupColor(usedColors);
+    const label = generateGroupLabel(selNodes.length, existingLabels);
+    const nodeIds = selNodes.map((n) => n.id);
+
+    addGroup(nodeIds, label, color);
+    handleDeselectAll();
+    toast.success(`Created group "${label}" with ${selNodes.length} nodes`);
+  }, [nodes, groups, addGroup, handleDeselectAll]);
+
   // Focus on node helper (for inspector)
   const handleFocusNode = useCallback(
     (nodeId: string) => {
@@ -684,7 +842,9 @@ function KnowledgeGraphPage() {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-stone-50 to-gray-100 dark:from-neutral-950 dark:via-[#0f1419] dark:to-neutral-950">
       {/* ─── Header ─── */}
-      <header className="bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md border-b border-gray-200 dark:border-neutral-800 sticky top-0 z-30">
+      <header className="bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md border-b border-gray-200 dark:border-neutral-800 sticky top-0 z-30 transition-shadow duration-300 hover:shadow-md">
+        {/* Animated gradient underline beneath header */}
+        <div className="absolute bottom-0 left-0 right-0 animated-teal-line opacity-40" />
         <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           {/* Title */}
           <div className="flex items-center gap-3">
@@ -692,7 +852,7 @@ function KnowledgeGraphPage() {
               <Network className="size-5 text-white" />
             </div>
             <div className="hidden sm:block">
-              <h1 className="text-base font-bold text-gray-900 dark:text-gray-100 leading-tight">
+              <h1 className="text-base font-bold text-gray-900 dark:text-gray-100 leading-tight gradient-underline inline-block">
                 Knowledge Graph Builder
               </h1>
               <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-tight">
@@ -703,6 +863,9 @@ function KnowledgeGraphPage() {
 
           {/* Actions */}
           <div className="flex items-center gap-2">
+            {/* Share button */}
+            <ShareButton nodes={nodes} edges={edges} onGraphUpdated={loadGraph} />
+
             {/* Theme toggle */}
             <TooltipProvider delayDuration={300}>
               <Tooltip>
@@ -773,6 +936,19 @@ function KnowledgeGraphPage() {
               onMove={handleViewportMove}
               showMiniMap={showMiniMap}
             />
+
+            {/* ─── Selection Info Bar ─── */}
+            <AnimatePresence>
+              {showSelectionBar && (
+                <SelectionInfoBar
+                  selectedNodeCount={selectedNodeCount}
+                  selectedEdgeCount={selectedEdgeCount}
+                  onBatchDelete={handleBatchDelete}
+                  onGroupSelection={handleGroupSelection}
+                  onDeselectAll={handleDeselectAll}
+                />
+              )}
+            </AnimatePresence>
           </DropZone>
         )}
 
@@ -783,6 +959,7 @@ function KnowledgeGraphPage() {
           position={edgeContextMenu?.position || { x: 0, y: 0 }}
           visible={!!edgeContextMenu}
           onEdit={handleEdgeLabelEdit}
+          onStyleChange={handleEdgeStyleChange}
           onDelete={handleEdgeDelete}
           onClose={closeEdgeContextMenu}
         />
@@ -1233,26 +1410,28 @@ function KnowledgeGraphPage() {
             transition={{ delay: 0.5 }}
             className="absolute left-4 bottom-4 z-20"
           >
-            <div className="bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md rounded-xl border border-gray-200/60 dark:border-neutral-700/50 shadow-lg px-4 py-2 flex items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
-              {/* Node count */}
+            <div className="bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl rounded-xl border border-gray-200/60 dark:border-neutral-700/50 shadow-lg px-4 py-2 flex items-center gap-3 text-xs text-gray-600 dark:text-gray-300 relative overflow-hidden">
+              {/* Subtle animated teal line at top */}
+              <div className="absolute top-0 left-0 right-0 animated-teal-line opacity-30" />
+              {/* Node count with scale pop animation */}
               <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-teal-500 shadow-sm shadow-teal-500/30" />
-                <span className="font-semibold">{nodes.length}</span>
+                <div className="w-2.5 h-2.5 rounded-full bg-teal-500 shadow-sm shadow-teal-500/40" />
+                <span key={nodes.length} className="font-semibold stat-number stat-number-animate">{nodes.length}</span>
                 <span className="text-gray-400 dark:text-gray-500">{nodes.length === 1 ? 'node' : 'nodes'}</span>
               </div>
 
               {/* Separator */}
-              <div className="w-px h-3.5 bg-gray-200 dark:bg-neutral-700" />
+              <div className="w-px h-4 bg-gradient-to-b from-transparent via-gray-300 dark:via-neutral-600 to-transparent" />
 
               {/* Edge count */}
               <div className="flex items-center gap-1.5">
                 <div className="w-2.5 h-2.5 rounded-full bg-gray-400 dark:bg-gray-500" />
-                <span className="font-semibold">{edges.length}</span>
+                <span key={edges.length} className="font-semibold stat-number stat-number-animate">{edges.length}</span>
                 <span className="text-gray-400 dark:text-gray-500">{edges.length === 1 ? 'edge' : 'edges'}</span>
               </div>
 
               {/* Separator */}
-              <div className="w-px h-3.5 bg-gray-200 dark:bg-neutral-700" />
+              <div className="w-px h-4 bg-gradient-to-b from-transparent via-gray-300 dark:via-neutral-600 to-transparent" />
 
               {/* Zoom level (Feature 5) */}
               <div className="flex items-center gap-1.5">
@@ -1261,7 +1440,7 @@ function KnowledgeGraphPage() {
               </div>
 
               {/* Separator */}
-              <div className="w-px h-3.5 bg-gray-200 dark:bg-neutral-700" />
+              <div className="w-px h-4 bg-gradient-to-b from-transparent via-gray-300 dark:via-neutral-600 to-transparent" />
 
               {/* Minimap toggle */}
               <TooltipProvider delayDuration={300}>
@@ -1269,7 +1448,7 @@ function KnowledgeGraphPage() {
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => setShowMiniMap((p) => !p)}
-                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md transition-colors ${showMiniMap ? 'text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-lg transition-all duration-200 ${showMiniMap ? 'text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/25 shadow-sm shadow-teal-500/10 dark:shadow-teal-400/5' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-800'}`}
                     >
                       <Map className="size-3" />
                     </button>
@@ -1361,6 +1540,16 @@ function KnowledgeGraphPage() {
         onOpenChange={setTemplateDialogOpen}
         onGraphUpdated={loadGraph}
       />
+
+      {/* ─── Import from Shared URL Dialog ─── */}
+      <ImportFromUrlDialog
+        open={importUrlDialogOpen}
+        onOpenChange={setImportUrlDialogOpen}
+        sharedData={sharedGraphData}
+        onImported={handleImportFromUrl}
+      />
+      {/* ─── Onboarding Tutorial ─── */}
+      <OnboardingTutorial />
     </div>
   );
 }

@@ -19,6 +19,7 @@ import {
   type EdgeMouseHandler,
   type ReactFlowInstance,
   BackgroundVariant,
+  type OnSelectionChangeFunc,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Pencil } from 'lucide-react';
@@ -55,6 +56,7 @@ interface GraphCanvasProps {
   onEdgeContextMenu?: (event: React.MouseEvent, edge: Edge) => void;
   onInit?: (instance: ReactFlowInstance) => void;
   onMove?: (zoom: number) => void;
+  onSelectionChange?: OnSelectionChangeFunc;
   showMiniMap?: boolean;
 }
 
@@ -78,11 +80,11 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
 
   const nodeContent = (
     <div className="group relative kg-node-enter">
-      {/* Glow effect behind node — softer, wider spread */}
+      {/* Dramatic glow effect behind node — wider, more colorful spread */}
       <div
-        className="absolute -inset-2 rounded-2xl opacity-0 group-hover:opacity-100 transition-all duration-500 pointer-events-none"
+        className="absolute -inset-3 rounded-2xl opacity-0 group-hover:opacity-100 transition-all duration-500 pointer-events-none"
         style={{
-          boxShadow: `0 0 32px 8px ${hexToRgba(nodeColor, 0.18)}`,
+          boxShadow: `0 0 40px 10px ${hexToRgba(nodeColor, 0.22)}, 0 0 16px 4px ${hexToRgba(nodeColor, 0.1)}`,
         }}
       />
 
@@ -90,21 +92,19 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
         className={`
           relative flex items-center gap-3 rounded-xl px-4 py-3 shadow-md
           transition-all duration-300 cursor-grab active:cursor-grabbing
-          hover:shadow-lg
+          hover:shadow-xl hover:shadow-lg
           bg-white dark:bg-neutral-800/90 dark:border-neutral-700/50
           ${selected
-            ? 'ring-[3px] ring-offset-2 ring-offset-white dark:ring-offset-neutral-900 shadow-xl'
+            ? 'ring-[3px] ring-offset-2 ring-offset-white dark:ring-offset-neutral-900 shadow-xl node-selected-shimmer'
             : ''
           }
         `}
         style={{
           borderLeft: `4px solid ${nodeColor}`,
           borderRadius: '12px',
-          // Subtle gradient background
-          background: `linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(249,250,251,0.9) 100%)`,
-          ...(selected ? {
-            boxShadow: `0 0 0 3px ${hexToRgba(nodeColor, 0.5)}, 0 0 24px 6px ${hexToRgba(nodeColor, 0.12)}`,
-          } : {}),
+          // Subtle gradient background with inner shadow
+          background: `linear-gradient(135deg, rgba(255,255,255,0.97) 0%, rgba(249,250,251,0.93) 100%)`,
+          boxShadow: `inset 0 1px 2px rgba(0,0,0,0.04)${selected ? `, 0 0 0 3px ${hexToRgba(nodeColor, 0.5)}, 0 0 28px 8px ${hexToRgba(nodeColor, 0.15)}` : ''}`,
           // @ts-expect-error CSS custom property for ring color
           '--tw-ring-color': selected ? nodeColor : undefined,
         }}
@@ -133,9 +133,9 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
           }}
         />
 
-        {/* Handle label "in" on hover */}
-        <div className="absolute -left-10 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-          <span className="text-[9px] font-mono text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-neutral-700 px-1.5 py-0.5 rounded">
+        {/* Handle label "in" on hover — pill-shaped */}
+        <div className="absolute -left-12 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none">
+          <span className="text-[9px] font-semibold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/30 border border-teal-200 dark:border-teal-700/50 px-2 py-0.5 rounded-full shadow-sm">
             in
           </span>
         </div>
@@ -156,8 +156,11 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
             </div>
           )}
 
-          {/* Label */}
-          <span className="font-semibold text-sm text-gray-800 dark:text-gray-100 max-w-[180px] truncate select-none">
+          {/* Label with smoother fade truncation */}
+          <span className="font-semibold text-sm text-gray-800 dark:text-gray-100 max-w-[180px] truncate select-none" style={{
+            maskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
+            WebkitMaskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
+          }}>
             {data.label}
           </span>
 
@@ -172,9 +175,9 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
           )}
         </div>
 
-        {/* Edit icon button (appears on hover) */}
+        {/* Edit icon button (appears on hover) — teal ring effect */}
         <button
-          className="absolute -top-2 -right-2 size-6 rounded-full bg-white dark:bg-neutral-700 shadow-md border border-gray-200 dark:border-neutral-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-150 hover:bg-teal-50 dark:hover:bg-teal-900/40 hover:border-teal-200 dark:hover:border-teal-700 z-10"
+          className="absolute -top-2 -right-2 size-6 rounded-full bg-white dark:bg-neutral-700 shadow-md border border-gray-200 dark:border-neutral-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-teal-50 dark:hover:bg-teal-900/40 hover:border-teal-300 dark:hover:border-teal-600 hover:shadow-teal-200/50 dark:hover:shadow-teal-800/30 hover:ring-2 hover:ring-teal-200 dark:hover:ring-teal-700/50 z-10"
           onClick={(e) => {
             e.stopPropagation();
             const event = new CustomEvent('node-edit-click', { detail: { nodeId: id } });
@@ -196,9 +199,9 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
           }}
         />
 
-        {/* Handle label "out" on hover */}
-        <div className="absolute -right-10 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-          <span className="text-[9px] font-mono text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-neutral-700 px-1.5 py-0.5 rounded">
+        {/* Handle label "out" on hover — pill-shaped */}
+        <div className="absolute -right-12 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none">
+          <span className="text-[9px] font-semibold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/30 border border-teal-200 dark:border-teal-700/50 px-2 py-0.5 rounded-full shadow-sm">
             out
           </span>
         </div>
@@ -238,6 +241,7 @@ function GraphCanvasInner({
   onEdgeContextMenu,
   onInit,
   onMove,
+  onSelectionChange,
   showMiniMap = true,
 }: GraphCanvasProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -398,7 +402,11 @@ function GraphCanvasInner({
         onInit={handleInit}
         onMove={handleMove}
         onMoveEnd={handleMoveEnd}
+        onSelectionChange={onSelectionChange}
         nodeTypes={nodeTypes}
+        selectionOnDrag={true}
+        selectNodesOnDrag={false}
+        selectionKeyCode="Shift"
         fitView
         fitViewOptions={{ padding: 0.3 }}
         zoomOnDoubleClick={false}
@@ -414,7 +422,7 @@ function GraphCanvasInner({
           labelBgBorderRadius: 4,
         }}
         proOptions={{ hideAttribution: true }}
-        className={!isDark ? '!bg-gradient-to-br !from-gray-50 !via-stone-50 !to-gray-100 react-flow-canvas-light' : 'react-flow-canvas-dark'}
+        className={!isDark ? '!bg-gradient-to-br !from-gray-50 !via-stone-50 !to-gray-100 react-flow-canvas-light' : 'react-flow-canvas-dark react-flow-selection-box-dark'}
       >
         <Background
           variant={BackgroundVariant.Dots}
@@ -464,25 +472,37 @@ export function mapApiToReactFlow(data: GraphData): {
         color: n.data.color,
       },
     })) as CustomNodeType[],
-    edges: data.edges.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      label: e.label,
-      type: e.type || 'smoothstep',
-      animated: e.animated !== false,
-      style: e.style || { stroke: TEAL, strokeWidth: 2 },
-      labelStyle: e.labelStyle || {
-        fill: TEAL,
-        fontSize: 12,
-        fontWeight: 600,
-      },
-      labelBgStyle: e.labelBgStyle || {
-        fill: '#ffffff',
-        fillOpacity: 0.9,
-      },
-      labelBgPadding: e.labelBgPadding || ([8, 4] as [number, number]),
-      labelBgBorderRadius: e.labelBgBorderRadius || 4,
-    })),
+    edges: data.edges.map((e) => {
+      const lineStyle = (e.lineStyle as string) || 'solid';
+      const thickness = (e.thickness as number) || 2;
+      const dashArray = lineStyle === 'dashed' ? '8 4' : lineStyle === 'dotted' ? '2 4' : undefined;
+      return {
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        label: e.label,
+        type: e.type || 'smoothstep',
+        animated: e.animated !== false,
+        style: {
+          stroke: TEAL,
+          strokeWidth: thickness,
+          ...(dashArray ? { strokeDasharray: dashArray } : {}),
+        },
+        labelStyle: e.labelStyle || {
+          fill: TEAL,
+          fontSize: 12,
+          fontWeight: 600,
+        },
+        labelBgStyle: e.labelBgStyle || {
+          fill: '#ffffff',
+          fillOpacity: 0.9,
+        },
+        labelBgPadding: e.labelBgPadding || ([8, 4] as [number, number]),
+        labelBgBorderRadius: e.labelBgBorderRadius || 4,
+        edgeType: (e.edgeType as string) || 'smoothstep',
+        lineStyle,
+        thickness,
+      };
+    }),
   };
 }

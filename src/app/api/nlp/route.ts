@@ -185,19 +185,27 @@ export async function POST(request: NextRequest) {
       },
     }));
 
-    const reactFlowEdges = allEdges.map((edge) => ({
-      id: edge.id,
-      source: edge.sourceNodeId,
-      target: edge.targetNodeId,
-      label: edge.relationship,
-      type: 'smoothstep',
-      animated: true,
-      style: { stroke: '#0d9488', strokeWidth: 2 },
-      labelStyle: { fill: '#0d9488', fontSize: 12, fontWeight: 600 },
-      labelBgStyle: { fill: '#ffffff', fillOpacity: 0.9 },
-      labelBgPadding: [8, 4] as [number, number],
-      labelBgBorderRadius: 4,
-    }));
+    const reactFlowEdges = allEdges.map((edge) => {
+      const lineStyle = edge.lineStyle || 'solid';
+      const thickness = edge.thickness || 2;
+      const dashArray = lineStyle === 'dashed' ? '8 4' : lineStyle === 'dotted' ? '2 4' : undefined;
+      return {
+        id: edge.id,
+        source: edge.sourceNodeId,
+        target: edge.targetNodeId,
+        label: edge.relationship,
+        type: edge.edgeType || 'smoothstep',
+        animated: edge.animated !== false,
+        style: { stroke: '#0d9488', strokeWidth: thickness, ...(dashArray ? { strokeDasharray: dashArray } : {}) },
+        labelStyle: { fill: '#0d9488', fontSize: 12, fontWeight: 600 },
+        labelBgStyle: { fill: '#ffffff', fillOpacity: 0.9 },
+        labelBgPadding: [8, 4] as [number, number],
+        labelBgBorderRadius: 4,
+        edgeType: edge.edgeType || 'smoothstep',
+        lineStyle,
+        thickness,
+      };
+    });
 
     return NextResponse.json({
       success: true,

@@ -66,7 +66,7 @@ export default function TemplateDialog({ open, onOpenChange, onGraphUpdated }: T
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.08, duration: 0.25 }}
-                className="group relative rounded-xl border border-gray-200/60 dark:border-neutral-700/50 bg-white dark:bg-neutral-900/60 overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
+                className="group relative rounded-xl border border-gray-200/60 dark:border-neutral-700/50 bg-white dark:bg-neutral-900/60 overflow-hidden hover:shadow-xl hover:-translate-y-1 hover:border-teal-200/60 dark:hover:border-teal-700/30 transition-all duration-300 gradient-border"
               >
                 {/* Gradient accent bar at top */}
                 <div
@@ -90,15 +90,15 @@ export default function TemplateDialog({ open, onOpenChange, onGraphUpdated }: T
                     </div>
                   </div>
 
-                  {/* Stats badges */}
+                  {/* Stats badges with gradient backgrounds */}
                   <div className="flex items-center gap-2 mb-3">
                     <Badge
                       variant="secondary"
                       className="text-[10px] px-2 py-0 h-5 font-medium"
                       style={{
-                        backgroundColor: `${template.accentColor}12`,
+                        background: `linear-gradient(135deg, ${template.accentColor}15, ${template.accentColor}08)`,
                         color: template.accentColor,
-                        borderColor: `${template.accentColor}25`,
+                        borderColor: `${template.accentColor}30`,
                         border: '1px solid',
                       }}
                     >
@@ -108,9 +108,9 @@ export default function TemplateDialog({ open, onOpenChange, onGraphUpdated }: T
                       variant="secondary"
                       className="text-[10px] px-2 py-0 h-5 font-medium"
                       style={{
-                        backgroundColor: `${template.accentColor}12`,
+                        background: `linear-gradient(135deg, ${template.accentColor}15, ${template.accentColor}08)`,
                         color: template.accentColor,
-                        borderColor: `${template.accentColor}25`,
+                        borderColor: `${template.accentColor}30`,
                         border: '1px solid',
                       }}
                     >
@@ -118,8 +118,11 @@ export default function TemplateDialog({ open, onOpenChange, onGraphUpdated }: T
                     </Badge>
                   </div>
 
-                  {/* Mini graph preview */}
-                  <div className="bg-gray-50 dark:bg-neutral-800/40 rounded-lg p-3 mb-3 relative overflow-hidden">
+                  {/* Mini graph preview with subtle pattern background */}
+                  <div className="bg-gray-50 dark:bg-neutral-800/40 rounded-lg p-3 mb-3 relative overflow-hidden" style={{
+                    backgroundImage: `radial-gradient(circle at 2px 2px, ${template.accentColor}08 1px, transparent 0)`,
+                    backgroundSize: '12px 12px',
+                  }}>
                     <svg viewBox="0 0 200 80" className="w-full h-auto">
                       {/* Render mini nodes and edges */}
                       {template.edges.map((edge, ei) => {
@@ -138,9 +141,8 @@ export default function TemplateDialog({ open, onOpenChange, onGraphUpdated }: T
                             x2={tx}
                             y2={ty}
                             stroke={template.accentColor}
-                            strokeWidth="1"
-                            strokeOpacity="0.3"
-                            strokeDasharray="3 2"
+                            strokeWidth="1.2"
+                            strokeOpacity="0.35"
                           />
                         );
                       })}
@@ -152,18 +154,28 @@ export default function TemplateDialog({ open, onOpenChange, onGraphUpdated }: T
                             <circle
                               cx={cx}
                               cy={cy}
-                              r="6"
+                              r="7"
                               fill={node.color}
-                              opacity="0.8"
+                              opacity="0.85"
+                              className="group-hover:opacity-100 transition-opacity"
+                            />
+                            <circle
+                              cx={cx}
+                              cy={cy}
+                              r="7"
+                              fill="none"
+                              stroke={node.color}
+                              strokeWidth="1.5"
+                              strokeOpacity="0.3"
                             />
                             <text
                               x={cx}
-                              y={cy + 14}
+                              y={cy + 15}
                               textAnchor="middle"
                               fill="currentColor"
                               className="text-gray-500 dark:text-gray-400"
                               fontSize="5"
-                              fontWeight="500"
+                              fontWeight="600"
                             >
                               {node.label.length > 8 ? node.label.slice(0, 8) : node.label}
                             </text>

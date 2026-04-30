@@ -53,7 +53,7 @@ export default function StatsPanel({ isOpen, onToggle }: StatsPanelProps) {
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 20 }}
           transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="absolute right-4 top-16 z-20 w-72 max-h-[calc(100%-5rem)] bg-white/95 backdrop-blur-md rounded-xl border border-gray-200 shadow-xl flex flex-col overflow-hidden"
+          className="absolute right-4 top-16 z-20 w-72 max-h-[calc(100%-5rem)] bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl rounded-xl border border-gray-200/80 dark:border-neutral-700/50 shadow-2xl flex flex-col overflow-hidden"
         >
           {/* Header */}
           <div className="p-3 border-b border-gray-100 flex items-center justify-between">
@@ -85,33 +85,33 @@ export default function StatsPanel({ isOpen, onToggle }: StatsPanelProps) {
               <>
                 {/* Stat Cards */}
                 <div className="grid grid-cols-2 gap-2">
-                  <Card className="rounded-xl border-gray-100 shadow-sm p-3 bg-gradient-to-br from-teal-50 to-white">
+                  <Card className="rounded-xl border-gray-100 shadow-sm p-3 bg-gradient-to-br from-teal-50 via-teal-50/50 to-white dark:from-teal-900/20 dark:via-teal-900/10 dark:to-neutral-900/60 hover:shadow-md transition-shadow duration-200">
                     <div className="flex items-center gap-1.5 mb-1">
                       <Network className="size-3 text-teal-500" />
                       <p className="text-[11px] text-gray-500 font-medium">Nodes</p>
                     </div>
-                    <p className="text-xl font-bold text-gray-800">{stats.totalNodes}</p>
+                    <p className="text-xl font-bold text-gray-800 stat-number">{stats.totalNodes}</p>
                   </Card>
-                  <Card className="rounded-xl border-gray-100 shadow-sm p-3 bg-gradient-to-br from-emerald-50 to-white">
+                  <Card className="rounded-xl border-gray-100 shadow-sm p-3 bg-gradient-to-br from-emerald-50 via-emerald-50/50 to-white dark:from-emerald-900/20 dark:via-emerald-900/10 dark:to-neutral-900/60 hover:shadow-md transition-shadow duration-200">
                     <div className="flex items-center gap-1.5 mb-1">
                       <GitBranch className="size-3 text-emerald-500" />
                       <p className="text-[11px] text-gray-500 font-medium">Edges</p>
                     </div>
-                    <p className="text-xl font-bold text-gray-800">{stats.totalEdges}</p>
+                    <p className="text-xl font-bold text-gray-800 stat-number">{stats.totalEdges}</p>
                   </Card>
-                  <Card className="rounded-xl border-gray-100 shadow-sm p-3 bg-gradient-to-br from-violet-50 to-white">
+                  <Card className="rounded-xl border-gray-100 shadow-sm p-3 bg-gradient-to-br from-amber-50 via-amber-50/50 to-white dark:from-amber-900/20 dark:via-amber-900/10 dark:to-neutral-900/60 hover:shadow-md transition-shadow duration-200">
                     <div className="flex items-center gap-1.5 mb-1">
-                      <Star className="size-3 text-violet-500" />
+                      <Star className="size-3 text-amber-500" />
                       <p className="text-[11px] text-gray-500 font-medium">Relationships</p>
                     </div>
-                    <p className="text-xl font-bold text-gray-800">{stats.uniqueRelationships.length}</p>
+                    <p className="text-xl font-bold text-gray-800 stat-number">{stats.uniqueRelationships.length}</p>
                   </Card>
-                  <Card className="rounded-xl border-gray-100 shadow-sm p-3 bg-gradient-to-br from-amber-50 to-white">
+                  <Card className="rounded-xl border-gray-100 shadow-sm p-3 bg-gradient-to-br from-rose-50 via-rose-50/50 to-white dark:from-rose-900/20 dark:via-rose-900/10 dark:to-neutral-900/60 hover:shadow-md transition-shadow duration-200">
                     <div className="flex items-center gap-1.5 mb-1">
-                      <TrendingUp className="size-3 text-amber-500" />
+                      <TrendingUp className="size-3 text-rose-500" />
                       <p className="text-[11px] text-gray-500 font-medium">Avg Conn.</p>
                     </div>
-                    <p className="text-xl font-bold text-gray-800">
+                    <p className="text-xl font-bold text-gray-800 stat-number">
                       {stats.averageConnections.toFixed(1)}
                     </p>
                   </Card>
@@ -152,19 +152,19 @@ export default function StatsPanel({ isOpen, onToggle }: StatsPanelProps) {
                           initial={{ opacity: 0, x: 8 }}
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: index * 0.05 }}
-                          className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50"
+                          className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-teal-50/60 dark:hover:bg-teal-900/15 transition-colors duration-150"
                         >
-                          <span className="text-[10px] text-gray-400 font-mono w-4 text-right">
+                          <span className="text-[10px] text-gray-400 font-mono w-4 text-right font-bold">
                             {index + 1}
                           </span>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-gray-700 truncate">
+                            <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">
                               {node.label}
                             </p>
                           </div>
                           <Badge
                             variant="outline"
-                            className="text-[10px] rounded-full px-1.5 py-0 text-gray-500 border-gray-200"
+                            className="text-[10px] rounded-full px-1.5 py-0 text-teal-600 dark:text-teal-400 border-teal-200 dark:border-teal-700/40 bg-teal-50/50 dark:bg-teal-900/15"
                           >
                             {node.connections}
                           </Badge>

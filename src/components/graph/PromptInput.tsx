@@ -120,18 +120,26 @@ export default function PromptInput({
   const isNearLimit = charCount > MAX_CHARS * 0.8;
 
   return (
-    <div className="border-b border-gray-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm">
+    <div className="relative border-b border-gray-200/80 dark:border-neutral-800/80 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm">
+      {/* Subtle gradient border top — teal-to-emerald when collapsed */}
+      {!isExpanded && (
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-teal-400 to-emerald-400 dark:via-teal-500 dark:to-emerald-500 opacity-60" />
+      )}
       {/* Toggle Button */}
       <button
         onClick={onToggleExpand}
         className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50/80 dark:hover:bg-neutral-800/50 transition-colors"
       >
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 shadow-sm">
+          <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 shadow-sm">
             <Sparkles className="size-4 text-white" />
+            {/* Pulsing dot indicator when ready */}
+            {!isProcessing && !isExpanded && (
+              <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-400 border-2 border-white dark:border-neutral-900 pulse-dot" />
+            )}
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">AI Graph Generator</h3>
+            <h3 className="text-sm font-semibold shimmer-text">AI Graph Generator</h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">
               Describe relationships in natural language
             </p>
@@ -161,7 +169,9 @@ export default function PromptInput({
             transition={{ duration: 0.2, ease: 'easeInOut' }}
             className="overflow-hidden"
           >
-            <div className="px-4 pb-4 space-y-3">
+            <div className="px-4 pb-4 space-y-3 relative">
+              {/* Frosted glass effect overlay for expanded state */}
+              <div className="absolute inset-0 bg-white/30 dark:bg-neutral-900/30 backdrop-blur-xl -z-10 rounded-b-xl" />
               {/* Input area */}
               <div className="relative">
                 <Textarea
@@ -174,7 +184,7 @@ export default function PromptInput({
                   }}
                   onKeyDown={handleKeyDown}
                   placeholder="e.g., Elon Musk founded Tesla and leads SpaceX"
-                  className={`resize-none min-h-[80px] pr-12 border-gray-200 dark:border-neutral-700 focus:border-teal-400 dark:focus:border-teal-600 focus:ring-teal-400/20 dark:focus:ring-teal-600/20 text-sm bg-gray-50/50 dark:bg-neutral-800/50 ${isProcessing ? 'shimmer-loading' : ''}`}
+                  className={`resize-none min-h-[80px] pr-12 border-gray-200 dark:border-neutral-700 focus:border-teal-400 dark:focus:border-teal-600 focus:ring-teal-400/20 dark:focus:ring-teal-600/20 focus:shadow-[0_0_0_3px_rgba(13,148,136,0.1)] text-sm bg-gray-50/50 dark:bg-neutral-800/50 transition-shadow duration-200 ${isProcessing ? 'shimmer-loading' : ''}`}
                   disabled={isProcessing}
                 />
                 <Button
@@ -205,7 +215,7 @@ export default function PromptInput({
                     key={example}
                     type="button"
                     onClick={() => handleExampleClick(example)}
-                    className="text-xs px-2.5 py-1 rounded-full border border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-gray-400 hover:text-teal-700 dark:hover:text-teal-400 hover:border-teal-200 dark:hover:border-teal-800 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors"
+                    className="text-xs px-2.5 py-1 rounded-full border border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-gray-400 hover:text-teal-700 dark:hover:text-teal-400 hover:border-teal-300 dark:hover:border-teal-600 hover:bg-teal-50/80 dark:hover:bg-teal-900/30 hover:shadow-sm hover:-translate-y-px active:translate-y-0 transition-all duration-200"
                   >
                     {example}
                   </button>

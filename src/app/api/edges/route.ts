@@ -5,7 +5,15 @@ import { db } from '@/lib/db';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sourceNodeId, targetNodeId, relationship } = body;
+    const {
+      sourceNodeId,
+      targetNodeId,
+      relationship,
+      edgeType,
+      animated,
+      lineStyle,
+      thickness,
+    } = body;
 
     if (!sourceNodeId || !targetNodeId || !relationship) {
       return NextResponse.json(
@@ -26,6 +34,27 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Validate edge type
+    const validEdgeTypes = ['smoothstep', 'bezier', 'straight', 'step'];
+    const validatedEdgeType = validEdgeTypes.includes(edgeType)
+      ? edgeType
+      : 'smoothstep';
+
+    // Validate line style
+    const validLineStyles = ['solid', 'dashed', 'dotted'];
+    const validatedLineStyle = validLineStyles.includes(lineStyle)
+      ? lineStyle
+      : 'solid';
+
+    // Validate thickness
+    const validatedThickness =
+      typeof thickness === 'number' && thickness >= 1 && thickness <= 4
+        ? thickness
+        : 2;
+
+    // Validate animated
+    const validatedAnimated = typeof animated === 'boolean' ? animated : true;
 
     // Verify both nodes exist
     const [sourceNode, targetNode] = await Promise.all([
@@ -68,6 +97,10 @@ export async function POST(request: NextRequest) {
         relationship: sanitizedRelationship,
         sourceNodeId,
         targetNodeId,
+        edgeType: validatedEdgeType,
+        animated: validatedAnimated,
+        lineStyle: validatedLineStyle,
+        thickness: validatedThickness,
       },
       include: {
         sourceNode: true,

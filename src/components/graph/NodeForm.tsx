@@ -150,7 +150,15 @@ export default function NodeForm({
           <span className="hidden sm:inline">Add Node</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md overflow-hidden">
+        {/* Gradient top border */}
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-teal-500 via-teal-400 to-emerald-500" />
+        {/* Subtle background pattern */}
+        <div className="absolute inset-0 opacity-[0.02]" style={{
+          backgroundImage: 'radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0)',
+          backgroundSize: '20px 20px',
+        }} />
+        <div className="relative">
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold">
             {isEditing ? 'Edit Node' : 'Create New Node'}
@@ -172,7 +180,7 @@ export default function NodeForm({
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="e.g., Tesla, Albert Einstein, Python"
-              className="h-9"
+              className="h-9 focus-glow-teal"
               autoFocus
               required
             />
@@ -188,7 +196,7 @@ export default function NodeForm({
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
               placeholder="https://example.com/image.jpg"
-              className="h-9"
+              className="h-9 focus-glow-teal"
             />
           </div>
 
@@ -203,9 +211,9 @@ export default function NodeForm({
                   onClick={() => setColor(c)}
                   title={c}
                   className={`
-                    h-8 rounded-lg transition-all duration-150 flex items-center justify-center
-                    hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500
-                    ${color === c ? 'ring-2 ring-offset-2 ring-teal-500 scale-105' : 'ring-1 ring-gray-200 hover:ring-gray-300'}
+                    h-8 rounded-lg transition-all duration-200 flex items-center justify-center
+                    hover:scale-110 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500
+                    ${color === c ? 'ring-2 ring-offset-2 ring-teal-500 scale-110 shadow-md' : 'ring-1 ring-gray-200 dark:ring-neutral-600 hover:ring-teal-300 dark:hover:ring-teal-600'}
                   `}
                   style={{ backgroundColor: c }}
                   aria-label={`Select color ${c}`}
@@ -225,7 +233,7 @@ export default function NodeForm({
             <motion.div
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-xl border bg-gradient-to-r from-gray-50 to-white p-3"
+              className="rounded-xl border bg-gradient-to-br from-gray-50 to-white dark:from-neutral-800/50 dark:to-neutral-900/50 p-3 shadow-inner"
             >
               <p className="text-xs text-muted-foreground mb-2">Preview</p>
               <div className="relative overflow-hidden">
@@ -327,6 +335,7 @@ export default function NodeForm({
             </Button>
           </DialogFooter>
         </form>
+        </div>
       </DialogContent>
     </Dialog>
   );

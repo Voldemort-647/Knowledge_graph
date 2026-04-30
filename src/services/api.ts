@@ -23,6 +23,9 @@ export interface GraphEdge {
   labelBgStyle?: Record<string, unknown>;
   labelBgPadding?: [number, number];
   labelBgBorderRadius?: number;
+  edgeType?: string;
+  lineStyle?: string;
+  thickness?: number;
 }
 
 export interface GraphData {
@@ -49,11 +52,19 @@ export interface CreateEdgeData {
   sourceNodeId: string;
   targetNodeId: string;
   relationship: string;
+  edgeType?: string;
+  animated?: boolean;
+  lineStyle?: string;
+  thickness?: number;
 }
 
 export interface UpdateEdgeData {
   id: string;
-  relationship: string;
+  relationship?: string;
+  edgeType?: string;
+  animated?: boolean;
+  lineStyle?: string;
+  thickness?: number;
 }
 
 export interface NodePosition {

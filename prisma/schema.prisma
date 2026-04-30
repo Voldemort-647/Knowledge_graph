@@ -26,6 +26,10 @@ model GraphEdge {
   relationship  String
   sourceNodeId  String
   targetNodeId  String
+  edgeType      String     @default("smoothstep")
+  animated      Boolean    @default(true)
+  lineStyle     String     @default("solid")
+  thickness     Int        @default(2)
   createdAt     DateTime   @default(now())
 
   sourceNode GraphNode @relation("SourceNode", fields: [sourceNodeId], references: [id])
