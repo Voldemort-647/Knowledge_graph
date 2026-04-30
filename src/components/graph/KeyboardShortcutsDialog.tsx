@@ -1,6 +1,6 @@
 'use client';
 
-import { Keyboard, Delete, FilePlus, GitBranch, X, HelpCircle, Undo2, Redo2, LayoutGrid, RotateCcw } from 'lucide-react';
+import { Keyboard, Delete, FilePlus, GitBranch, X, HelpCircle, Undo2, Redo2, LayoutGrid, RotateCcw, MessageSquare } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -63,6 +63,16 @@ const SHORTCUTS: ShortcutItem[] = [
     keys: ['Escape'],
     label: 'Deselect all items',
     icon: <X className="size-4 text-gray-500" />,
+  },
+  {
+    keys: ['Right Click'],
+    label: 'Node context menu (edit/focus/connect/duplicate/delete)',
+    icon: <GitBranch className="size-4 text-teal-500" />,
+  },
+  {
+    keys: ['Right Click'],
+    label: 'Edge context menu (edit label/style/delete)',
+    icon: <MessageSquare className="size-4 text-emerald-500" />,
   },
 ];
 

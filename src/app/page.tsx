@@ -38,6 +38,8 @@ import {
   Eraser,
   ImageIcon,
   ChevronsUpDown,
+  ScrollText,
+  MessageSquare,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -77,7 +79,9 @@ import ExportButton from '@/components/graph/ExportButton';
 import KeyboardShortcutsDialog from '@/components/graph/KeyboardShortcutsDialog';
 import NodeInspector from '@/components/graph/NodeInspector';
 import EdgeContextMenu from '@/components/graph/EdgeContextMenu';
+import NodeContextMenu from '@/components/graph/NodeContextMenu';
 import type { EdgeStyleData } from '@/components/graph/EdgeStylePicker';
+import ActivityLog from '@/components/graph/ActivityLog';
 import PromptInput from '@/components/graph/PromptInput';
 import NodePalette from '@/components/graph/NodePalette';
 import DropZone from '@/components/graph/DropZone';
@@ -91,6 +95,7 @@ import {
   fetchGraph,
   deleteNode as apiDeleteNode,
   deleteEdge as apiDeleteEdge,
+  createNode,
   createEdge,
   updateEdge,
   clearGraph,
@@ -107,6 +112,7 @@ import {
 import { useGroupStore } from '@/store/group-store';
 import { useOnboardingStore } from '@/store/onboarding-store';
 import { useAnnotationStore } from '@/store/annotation-store';
+import { useActivityStore } from '@/store/activity-store';
 import {
   getNextGroupColor,
   generateGroupLabel,
@@ -169,6 +175,19 @@ function KnowledgeGraphPage() {
     position: { x: number; y: number };
   } | null>(null);
 
+  // Node context menu state
+  const [nodeContextMenu, setNodeContextMenu] = useState<{
+    node: CustomNodeType;
+    position: { x: number; y: number };
+  } | null>(null);
+
+  // Activity log panel state
+  const [activityLogOpen, setActivityLogOpen] = useState(false);
+
+  // Edge label visibility state
+  const [showEdgeLabels, setShowEdgeLabels] = useState(true);
+  const edgeLabelsRef = useRef<Record<string, string>>({});
+
   // Undo/redo history
   const {
     pushSnapshot,
@@ -205,6 +224,9 @@ function KnowledgeGraphPage() {
 
   // Annotation store
   const { addAnnotation, annotations } = useAnnotationStore();
+
+  // Activity store
+  const { addEntry } = useActivityStore();
 
   // Onboarding: auto-start on first visit
   const { hasCompletedOnboarding, startOnboarding } = useOnboardingStore();
@@ -264,30 +286,34 @@ function KnowledgeGraphPage() {
   // Handle node deletion
   const handleDeleteNode = useCallback(
     async (id: string) => {
+      const node = nodes.find((n) => n.id === id);
       pushCurrentSnapshot();
       try {
         await apiDeleteNode(id);
         setNodes((nds) => nds.filter((n) => n.id !== id));
         setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
+        addEntry({ type: 'delete_node', description: `Deleted node "${node?.data.label || id}"` });
       } catch {
         toast.error('Failed to delete node');
       }
     },
-    [setNodes, setEdges, pushCurrentSnapshot]
+    [setNodes, setEdges, pushCurrentSnapshot, nodes, addEntry]
   );
 
   // Handle edge deletion
   const handleDeleteEdge = useCallback(
     async (id: string) => {
+      const edge = edges.find((e) => e.id === id);
       pushCurrentSnapshot();
       try {
         await apiDeleteEdge(id);
         setEdges((eds) => eds.filter((e) => e.id !== id));
+        addEntry({ type: 'delete_edge', description: `Deleted edge "${edge?.label || 'unnamed'}"` });
       } catch {
         toast.error('Failed to delete edge');
       }
     },
-    [setEdges, pushCurrentSnapshot]
+    [setEdges, pushCurrentSnapshot, edges, addEntry]
   );
 
   // Handle new connection from handle drag — open ConnectionDialog
@@ -327,6 +353,7 @@ function KnowledgeGraphPage() {
           relationship,
         });
         toast.success(`Connection "${relationship}" created`);
+        addEntry({ type: 'create_edge', description: `Created edge "${connectionData.sourceLabel}" → "${connectionData.targetLabel}" (${relationship})` });
         await loadGraph();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to create connection');
@@ -432,8 +459,9 @@ function KnowledgeGraphPage() {
       });
       setNodes(rfNodes);
       setEdges(rfEdges);
+      addEntry({ type: 'nlp', description: `NLP generated ${data.nodes.length} nodes and ${data.edges.length} edges` });
     },
-    [setNodes, setEdges, pushCurrentSnapshot]
+    [setNodes, setEdges, pushCurrentSnapshot, addEntry]
   );
 
   // Handle node drag end → push snapshot
@@ -465,7 +493,8 @@ function KnowledgeGraphPage() {
       fitView({ padding: 0.3, duration: 400 });
     }, 50);
     toast.success(`Graph auto-layout applied (${layoutDirection})`);
-  }, [nodes, edges, layoutDirection, setNodes, fitView, pushCurrentSnapshot]);
+    addEntry({ type: 'layout', description: `Applied ${layoutDirection} layout to ${nodes.length} nodes` });
+  }, [nodes, edges, layoutDirection, setNodes, fitView, pushCurrentSnapshot, addEntry]);
 
   // Undo handler
   const handleUndo = useCallback(() => {
@@ -584,6 +613,82 @@ function KnowledgeGraphPage() {
     setEdgeContextMenu(null);
   }, []);
 
+  // Node context menu handlers
+  const handleNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: CustomNodeType) => {
+      setNodeContextMenu({
+        node,
+        position: { x: event.clientX, y: event.clientY },
+      });
+    },
+    []
+  );
+
+  const closeNodeContextMenu = useCallback(() => {
+    setNodeContextMenu(null);
+  }, []);
+
+  // Handle node duplicate via context menu
+  const handleDuplicateNode = useCallback(
+    async (nodeId: string) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      try {
+        await createNode({
+          label: `${node.data.label} (copy)`,
+          color: node.data.color || '#0d9488',
+          emoji: node.data.emoji || undefined,
+          imageUrl: node.data.imageUrl || undefined,
+          posX: node.position.x + 50,
+          posY: node.position.y + 50,
+        });
+        toast.success(`Duplicated "${node.data.label}" node`);
+        addEntry({ type: 'duplicate_node', description: `Duplicated node "${node.data.label}"` });
+        await loadGraph();
+      } catch {
+        toast.error('Failed to duplicate node');
+      }
+    },
+    [nodes, loadGraph, addEntry]
+  );
+
+  // Handle connect from node context menu
+  const handleConnectFrom = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      setEdgeFormOpen(true);
+      toast.info(`Select a target node to connect from "${node.data.label}"`);
+    },
+    [nodes]
+  );
+
+  // Edge label visibility toggle
+  const handleToggleEdgeLabels = useCallback(() => {
+    setShowEdgeLabels((prev) => {
+      if (prev) {
+        const originals: Record<string, string> = {};
+        setEdges((eds) => {
+          eds.forEach((e) => {
+            if (e.label) originals[e.id] = String(e.label);
+          });
+          return eds.map((e) => ({ ...e, label: undefined as unknown as string }));
+        });
+        edgeLabelsRef.current = originals;
+      } else {
+        const originals = edgeLabelsRef.current;
+        setEdges((eds) =>
+          eds.map((e) => ({
+            ...e,
+            label: originals[e.id] || e.label,
+          }))
+        );
+        edgeLabelsRef.current = {};
+      }
+      return !prev;
+    });
+  }, [setEdges]);
+
   // Feature 1: Handle React Flow init
   const handleGraphCanvasInit = useCallback((instance: ReactFlowInstance) => {
     rfInstanceRef.current = instance;
@@ -681,6 +786,11 @@ function KnowledgeGraphPage() {
           closeEdgeContextMenu();
           return;
         }
+        // Close node context menu
+        if (nodeContextMenu) {
+          closeNodeContextMenu();
+          return;
+        }
         // Deselect all
         setNodes((nds) => nds.map((n) => ({ ...n, selected: false })));
         setEdges((eds) => eds.map((ed) => ({ ...ed, selected: false })));
@@ -737,7 +847,7 @@ function KnowledgeGraphPage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nodes, edges, handleDeleteNode, handleDeleteEdge, setNodes, setEdges, handleUndo, handleRedo, handleAutoLayout, edgeContextMenu, closeEdgeContextMenu]);
+  }, [nodes, edges, handleDeleteNode, handleDeleteEdge, setNodes, setEdges, handleUndo, handleRedo, handleAutoLayout, edgeContextMenu, closeEdgeContextMenu, nodeContextMenu, closeNodeContextMenu]);
 
   // Listen for node-edit-click custom event from GraphCanvas
   useEffect(() => {
@@ -825,13 +935,14 @@ function KnowledgeGraphPage() {
       clearHistory();
       setClearConfirmOpen(false);
       toast.success('Graph cleared successfully');
+      addEntry({ type: 'clear', description: 'Cleared entire graph' });
     } catch {
       toast.error('Failed to clear graph from database');
       setNodes([]);
       setEdges([]);
       setClearConfirmOpen(false);
     }
-  }, [setNodes, setEdges, clearHistory, pushCurrentSnapshot]);
+  }, [setNodes, setEdges, clearHistory, pushCurrentSnapshot, addEntry]);
 
   // Quick-connect from inspector (Feature 5)
   const handleQuickConnect = useCallback(
@@ -989,6 +1100,7 @@ function KnowledgeGraphPage() {
               onDeleteEdge={handleDeleteEdge}
               onConnectNew={handleConnect}
               onNodeDoubleClick={handleNodeDoubleClick}
+              onNodeContextMenu={handleNodeContextMenu}
               onEdgeContextMenu={handleEdgeContextMenu}
               onInit={handleGraphCanvasInit}
               onMove={handleViewportMove}
@@ -1052,6 +1164,25 @@ function KnowledgeGraphPage() {
         {!isLoading && (
           <StatsPanel isOpen={statsPanelOpen} onToggle={() => setStatsPanelOpen((p) => !p)} />
         )}
+
+        {/* ─── Activity Log Panel ─── */}
+        {!isLoading && (
+          <ActivityLog isOpen={activityLogOpen} onToggle={() => setActivityLogOpen((p) => !p)} />
+        )}
+
+        {/* ─── Node Context Menu ─── */}
+        <NodeContextMenu
+          key={nodeContextMenu?.node?.id || 'none'}
+          node={nodeContextMenu?.node || null}
+          position={nodeContextMenu?.position || { x: 0, y: 0 }}
+          visible={!!nodeContextMenu}
+          onEdit={handleNodeDoubleClick}
+          onDelete={handleDeleteNode}
+          onFocus={handleFocusNode}
+          onConnectFrom={handleConnectFrom}
+          onDuplicate={handleDuplicateNode}
+          onClose={closeNodeContextMenu}
+        />
 
         {/* ─── Floating Toolbar (Glassmorphism) ─── */}
         <AnimatePresence>
@@ -1256,6 +1387,40 @@ function KnowledgeGraphPage() {
                     </motion.div>
                   </TooltipTrigger>
                   <TooltipContent side="left">Keyboard shortcuts (?)</TooltipContent>
+                </Tooltip>
+
+                {/* Activity Log */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className={`${toolbarBtnBase} ${activityLogOpen ? toolbarBtnActive : toolbarBtnInactive}`}
+                        onClick={() => setActivityLogOpen((p) => !p)}
+                      >
+                        <ScrollText className="size-4" />
+                      </Button>
+                    </motion.div>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Activity Log</TooltipContent>
+                </Tooltip>
+
+                {/* Edge Label Toggle */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className={`${toolbarBtnBase} ${showEdgeLabels ? toolbarBtnActive : toolbarBtnInactive}`}
+                        onClick={handleToggleEdgeLabels}
+                      >
+                        <MessageSquare className="size-4" />
+                      </Button>
+                    </motion.div>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Toggle Edge Labels</TooltipContent>
                 </Tooltip>
 
                 {/* Divider */}
@@ -1634,30 +1799,22 @@ function KnowledgeGraphPage() {
         )}
       </main>
 
-      {/* ─── Task 7: Enhanced Footer ─── */}
+      {/* ─── Enhanced Footer ─── */}
       <footer className="bg-white/70 dark:bg-neutral-900/70 backdrop-blur-md border-t border-gray-200/80 dark:border-neutral-800 py-2.5 px-4 mt-auto relative overflow-hidden">
         {/* Subtle top gradient line */}
         <div className="absolute top-0 left-0 right-0 animated-teal-line opacity-20" />
         <div className="max-w-screen-2xl mx-auto flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-          {/* Left: Stats summary */}
+          {/* Left: App info */}
           <div className="flex items-center gap-2 sm:gap-3">
             <Network className="size-3.5 text-teal-500 dark:text-teal-400 hidden sm:block flex-shrink-0" />
-            <span className="hidden sm:inline">
-              <span className="font-medium text-gray-600 dark:text-gray-300">{nodes.length}</span>
-              <span className="text-gray-400 dark:text-gray-500">{nodes.length === 1 ? ' node' : ' nodes'}</span>
-              <span className="mx-1.5 text-gray-300 dark:text-gray-600">&middot;</span>
-              <span className="font-medium text-gray-600 dark:text-gray-300">{edges.length}</span>
-              <span className="text-gray-400 dark:text-gray-500">{edges.length === 1 ? ' edge' : ' edges'}</span>
-              <span className="mx-1.5 text-gray-300 dark:text-gray-600">&middot;</span>
-              <span className="font-medium text-gray-600 dark:text-gray-300">{Object.keys(groups).length}</span>
-              <span className="text-gray-400 dark:text-gray-500">{Object.keys(groups).length === 1 ? ' group' : ' groups'}</span>
+            <span className="hidden sm:inline font-medium text-gray-600 dark:text-gray-300">
+              Knowledge Graph Builder
             </span>
-            {/* Mobile: icons only */}
-            <span className="sm:hidden flex items-center gap-1.5">
-              <Network className="size-3 text-teal-500 dark:text-teal-400" />
-              <span className="font-medium text-gray-600 dark:text-gray-300">{nodes.length}</span>
-              <span className="mx-0.5 text-gray-300 dark:text-gray-600">&middot;</span>
-              <span className="font-medium text-gray-600 dark:text-gray-300">{edges.length}</span>
+            <span className="sm:hidden font-medium text-gray-600 dark:text-gray-300">
+              KGB
+            </span>
+            <span className="hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-100 dark:bg-neutral-800 rounded text-[10px] border border-gray-200 dark:border-neutral-700">
+              Built with React Flow
             </span>
           </div>
           {/* Right: Shortcut hint + credit */}
@@ -1667,9 +1824,9 @@ function KnowledgeGraphPage() {
               className="hidden sm:flex items-center gap-1.5 text-gray-400 dark:text-gray-500 hover:text-teal-600 dark:hover:text-teal-400 transition-colors"
             >
               <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-neutral-800 rounded text-[10px] font-mono border border-gray-200 dark:border-neutral-700 shadow-sm">?</kbd>
-              <span>shortcuts</span>
+              <span>for shortcuts</span>
             </button>
-            <span className="text-gray-300 dark:text-gray-600">v2.0</span>
+            <span className="text-gray-300 dark:text-gray-600">v2.1</span>
           </div>
         </div>
       </footer>

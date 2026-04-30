@@ -55,6 +55,7 @@ interface GraphCanvasProps {
   onConnectNew?: (connection: Connection) => void;
   onNodeDoubleClick?: (nodeId: string) => void;
   onEdgeContextMenu?: (event: React.MouseEvent, edge: Edge) => void;
+  onNodeContextMenu?: (event: React.MouseEvent, node: Node) => void;
   onInit?: (instance: ReactFlowInstance) => void;
   onMove?: (zoom: number) => void;
   onSelectionChange?: OnSelectionChangeFunc;
@@ -146,7 +147,7 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
         <div className="relative flex items-center gap-3 min-w-0">
           {/* Emoji display (large, replaces image thumbnail) */}
           {hasEmoji && !hasImage && (
-            <span className="text-2xl flex-shrink-0 select-none" role="img" aria-label="node emoji">
+            <span className="text-2xl flex-shrink-0 select-none mr-1" role="img" aria-label="node emoji">
               {data.emoji}
             </span>
           )}
@@ -166,10 +167,13 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
           )}
 
           {/* Label with smoother fade truncation */}
-          <span className="font-semibold text-sm text-gray-800 dark:text-gray-100 max-w-[180px] truncate select-none" style={{
-            maskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
-            WebkitMaskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
-          }}>
+          <span
+            className={`${hasEmoji && !hasImage ? 'text-[13px]' : 'text-sm'} font-semibold text-gray-800 dark:text-gray-100 ${hasEmoji && !hasImage ? 'max-w-[140px]' : 'max-w-[180px]'} truncate select-none`}
+            style={{
+              maskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
+              WebkitMaskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
+            }}
+          >
             {data.label}
           </span>
 
@@ -248,6 +252,7 @@ function GraphCanvasInner({
   onConnectNew,
   onNodeDoubleClick,
   onEdgeContextMenu,
+  onNodeContextMenu,
   onInit,
   onMove,
   onSelectionChange,
@@ -387,6 +392,17 @@ function GraphCanvasInner({
     [onNodeDoubleClick]
   );
 
+  // Handle node right-click context menu
+  const handleNodeContextMenu: NodeMouseHandler = useCallback(
+    (event, node) => {
+      event.preventDefault();
+      if (onNodeContextMenu) {
+        onNodeContextMenu(event as unknown as React.MouseEvent, node);
+      }
+    },
+    [onNodeContextMenu]
+  );
+
   // Handle edge right-click context menu
   const handleEdgeContextMenu: EdgeMouseHandler = useCallback(
     (event, edge) => {
@@ -407,6 +423,7 @@ function GraphCanvasInner({
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
         onNodeDoubleClick={handleNodeDoubleClick}
+        onNodeContextMenu={handleNodeContextMenu}
         onEdgeContextMenu={handleEdgeContextMenu}
         onInit={handleInit}
         onMove={handleMove}
