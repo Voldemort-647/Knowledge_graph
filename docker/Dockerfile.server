@@ -1,0 +1,23 @@
+# For a standalone Node.js + Express backend (alternative to Next.js API routes)
+FROM node:20-alpine AS base
+
+FROM base AS deps
+WORKDIR /app
+COPY package.json bun.lock ./
+RUN npm install -g bun
+RUN bun install --frozen-lockfile --production
+
+FROM base AS runner
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=base /app/package.json ./
+
+# Copy server source (if using a standalone Express backend)
+# COPY ./server ./server
+
+ENV NODE_ENV=production
+EXPOSE 3001
+
+# CMD ["node", "server/index.js"]
+# Note: In this Next.js project, the backend is embedded as API routes
+CMD ["echo", "Backend is embedded in Next.js API routes - use Dockerfile.client"]

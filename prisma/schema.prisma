@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model GraphNode {
+  id        String   @id @default(cuid())
+  label     String
+  imageUrl  String?
+  color     String   @default("#6366f1")
+  posX      Float    @default(0)
+  posY      Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sourceEdges GraphEdge[] @relation("SourceNode")
+  targetEdges GraphEdge[] @relation("TargetNode")
+}
+
+model GraphEdge {
+  id            String     @id @default(cuid())
+  relationship  String
+  sourceNodeId  String
+  targetNodeId  String
+  createdAt     DateTime   @default(now())
+
+  sourceNode GraphNode @relation("SourceNode", fields: [sourceNodeId], references: [id])
+  targetNode GraphNode @relation("TargetNode", fields: [targetNodeId], references: [id])
+}
