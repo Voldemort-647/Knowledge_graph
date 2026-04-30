@@ -18,23 +18,16 @@ import {
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { toast } from 'sonner';
-import { Trash2 } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import type { GraphData } from '@/services/api';
 import { updateNodePositions } from '@/services/api';
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-  ContextMenuSeparator,
-} from '@/components/ui/context-menu';
 
 /* ─── Types ─── */
 export interface CustomNodeData {
   label: string;
   imageUrl?: string | null;
   color?: string;
+  edgeCount?: number;
   [key: string]: unknown;
 }
 
@@ -48,61 +41,156 @@ interface GraphCanvasProps {
   onDeleteNode?: (id: string) => void;
   onDeleteEdge?: (id: string) => void;
   onConnectNew?: (connection: Connection) => void;
+  onNodeDoubleClick?: (nodeId: string) => void;
 }
 
 /* ─── Color helpers ─── */
 const TEAL = '#0d9488';
 
 /* ─── Custom Node Component ─── */
-function CustomNodeComponent({ data, selected }: NodeProps<CustomNodeType>) {
+function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) {
   const nodeColor = data.color || TEAL;
   const hasImage = data.imageUrl && data.imageUrl.trim().length > 0;
+  const edgeCount = data.edgeCount ?? 0;
+
+  // Convert hex to rgba with opacity
+  const hexToRgba = (hex: string, alpha: number): string => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
 
   return (
     <div
-      className={`
-        group relative flex items-center gap-3 rounded-xl border bg-white px-4 py-3 shadow-md
-        transition-all duration-200 cursor-grab active:cursor-grabbing
-        hover:shadow-lg hover:scale-[1.02]
-        ${selected ? 'ring-2 ring-teal-500 ring-offset-2 shadow-lg' : ''}
-      `}
+      className="group relative"
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent('node-edit-click', { detail: { nodeId: id } }));
+      }}
     >
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!w-2.5 !h-2.5 !bg-teal-400 !border-teal-600"
-      />
-
-      {/* Color indicator dot */}
+      {/* Glow effect behind node */}
       <div
-        className="w-3.5 h-3.5 rounded-full flex-shrink-0 ring-2 ring-white shadow-sm"
-        style={{ backgroundColor: nodeColor }}
+        className="absolute -inset-1 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+        style={{
+          boxShadow: `0 0 24px 6px ${hexToRgba(nodeColor, 0.25)}`,
+        }}
       />
 
-      {/* Label */}
-      <span className="font-semibold text-sm text-gray-800 max-w-[180px] truncate">
-        {data.label}
-      </span>
+      <div
+        className={`
+          relative flex items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-md
+          transition-all duration-200 cursor-grab active:cursor-grabbing
+          hover:shadow-lg
+          ${selected ? 'ring-[3px] ring-offset-2 shadow-xl' : ''}
+        `}
+        style={{
+          borderLeft: `4px solid ${nodeColor}`,
+          borderRadius: '12px',
+          ringColor: selected ? nodeColor : undefined,
+          // @ts-expect-error ring-color custom property
+          '--tw-ring-color': selected ? nodeColor : undefined,
+        }}
+        {...(selected && {
+          className: `relative flex items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-xl transition-all duration-200 cursor-grab active:cursor-grabbing ring-[3px] ring-offset-2`,
+          style: {
+            borderLeft: `4px solid ${nodeColor}`,
+            borderRadius: '12px',
+            boxShadow: `0 0 0 3px ${hexToRgba(nodeColor, 0.5)}, 0 0 20px 4px ${hexToRgba(nodeColor, 0.15)}`,
+          },
+        })}
+      >
+        {/* Gradient overlay */}
+        <div
+          className="absolute inset-0 rounded-xl opacity-[0.03] pointer-events-none"
+          style={{
+            background: `linear-gradient(135deg, ${nodeColor}, transparent 60%)`,
+          }}
+        />
 
-      {/* Optional image thumbnail */}
-      {hasImage && (
-        <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 ring-1 ring-gray-200">
-          <img
-            src={data.imageUrl as string}
-            alt={data.label}
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = 'none';
-            }}
-          />
+        {/* Left Handle (Target) */}
+        <Handle
+          type="target"
+          position={Position.Left}
+          className="!w-2.5 !h-2.5 !border-2 !rounded-full"
+          style={{
+            backgroundColor: nodeColor,
+            borderColor: 'white',
+            boxShadow: `0 0 0 2px ${hexToRgba(nodeColor, 0.3)}`,
+          }}
+        />
+
+        {/* Handle label "in" on hover */}
+        <div className="absolute -left-10 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+          <span className="text-[9px] font-mono text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+            in
+          </span>
         </div>
-      )}
 
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!w-2.5 !h-2.5 !bg-teal-400 !border-teal-600"
-      />
+        {/* Content */}
+        <div className="relative flex items-center gap-3 min-w-0">
+          {/* Image thumbnail (larger, rounded-full) */}
+          {hasImage && (
+            <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-gray-100 shadow-sm">
+              <img
+                src={data.imageUrl as string}
+                alt={data.label}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            </div>
+          )}
+
+          {/* Label */}
+          <span className="font-semibold text-sm text-gray-800 max-w-[180px] truncate select-none">
+            {data.label}
+          </span>
+
+          {/* Edge count badge */}
+          {edgeCount > 0 && (
+            <div
+              className="flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+              style={{ backgroundColor: hexToRgba(nodeColor, 0.7) }}
+            >
+              {edgeCount}
+            </div>
+          )}
+        </div>
+
+        {/* Edit icon button (appears on hover) */}
+        <button
+          className="absolute -top-2 -right-2 size-6 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-150 hover:bg-teal-50 hover:border-teal-200 z-10"
+          onClick={(e) => {
+            e.stopPropagation();
+            // Dispatch a custom event for parent to handle
+            const event = new CustomEvent('node-edit-click', { detail: { nodeId: id } });
+            window.dispatchEvent(event);
+          }}
+        >
+          <Pencil className="size-3 text-gray-500 group-hover:text-teal-600" />
+        </button>
+
+        {/* Right Handle (Source) */}
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="!w-2.5 !h-2.5 !border-2 !rounded-full"
+          style={{
+            backgroundColor: nodeColor,
+            borderColor: 'white',
+            boxShadow: `0 0 0 2px ${hexToRgba(nodeColor, 0.3)}`,
+          }}
+        />
+
+        {/* Handle label "out" on hover */}
+        <div className="absolute -right-10 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+          <span className="text-[9px] font-mono text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+            out
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -116,9 +204,33 @@ export default function GraphCanvas({
   onDeleteNode,
   onDeleteEdge,
   onConnectNew,
+  onNodeDoubleClick,
 }: GraphCanvasProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rfRef = useRef<HTMLDivElement>(null);
+
+  // Compute edge counts per node
+  const edgeCountMap = useMemo(() => {
+    const counts: Record<string, number> = {};
+    edges.forEach((e) => {
+      counts[e.source] = (counts[e.source] || 0) + 1;
+      counts[e.target] = (counts[e.target] || 0) + 1;
+    });
+    return counts;
+  }, [edges]);
+
+  // Augment nodes with edge count
+  const augmentedNodes = useMemo(
+    () =>
+      nodes.map((n) => ({
+        ...n,
+        data: {
+          ...n.data,
+          edgeCount: edgeCountMap[n.id] || 0,
+        },
+      })) as CustomNodeType[],
+    [nodes, edgeCountMap]
+  );
 
   // Node types — memoized to avoid re-renders
   const nodeTypes = useMemo(
@@ -189,133 +301,64 @@ export default function GraphCanvas({
     [onConnectNew]
   );
 
-  // Node context menu delete
-  const handleNodeContextMenu: NodeMouseHandler = useCallback(
+  // Handle node double-click
+  const handleNodeDoubleClick: NodeMouseHandler = useCallback(
     (_event, node) => {
-      // The context menu handles the action via ContextMenuItem
-    },
-    []
-  );
-
-  // Edge context menu — we handle this at the ReactFlow level
-  const onEdgeContextMenu = useCallback(
-    (_event: React.MouseEvent, edge: Edge) => {
-      // Context menu will handle this
-    },
-    []
-  );
-
-  // Keyboard delete handler
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        // Only delete if not focused on an input/textarea
-        const target = e.target as HTMLElement;
-        if (
-          target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable
-        ) {
-          return;
-        }
-        // Find selected nodes and edges via React Flow's selection
-        // We rely on the parent to track selected nodes
+      if (onNodeDoubleClick) {
+        onNodeDoubleClick(node.id);
       }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    },
+    [onNodeDoubleClick]
+  );
 
   return (
     <div ref={rfRef} className="w-full h-full">
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div className="w-full h-full">
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={handleNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={handleConnect}
-              nodeTypes={nodeTypes}
-              onNodeContextMenu={handleNodeContextMenu}
-              onEdgeContextMenu={onEdgeContextMenu}
-              fitView
-              fitViewOptions={{ padding: 0.3 }}
-              minZoom={0.2}
-              maxZoom={2}
-              defaultEdgeOptions={{
-                type: 'smoothstep',
-                animated: true,
-                style: { stroke: TEAL, strokeWidth: 2 },
-                labelStyle: { fill: TEAL, fontSize: 12, fontWeight: 600 },
-                labelBgStyle: { fill: '#ffffff', fillOpacity: 0.9 },
-                labelBgPadding: [8, 4] as [number, number],
-                labelBgBorderRadius: 4,
-              }}
-              proOptions={{ hideAttribution: true }}
-              className="bg-gray-50/50"
-            >
-              <Background
-                variant={BackgroundVariant.Dots}
-                gap={20}
-                size={1.2}
-                color="#d1d5db"
-              />
-              <Controls
-                className="!bg-white !border-gray-200 !shadow-md !rounded-lg [&>button]:!border-gray-200 [&>button]:!rounded-md [&>button]:!w-8 [&>button]:!h-8"
-                showInteractive={false}
-              />
-              <MiniMap
-                className="!bg-white !border-gray-200 !shadow-md !rounded-lg"
-                nodeColor={(node) => {
-                  const data = node.data as CustomNodeData;
-                  return data?.color || TEAL;
-                }}
-                maskColor="rgba(0,0,0,0.08)"
-                pannable
-                zoomable
-              />
-            </ReactFlow>
-          </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent className="w-48">
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            variant="destructive"
-            className="gap-2"
-            onSelect={() => {
-              // Find the selected node from the DOM context
-              const selectedNode = nodes.find((n) => n.selected);
-              if (selectedNode && onDeleteNode) {
-                onDeleteNode(selectedNode.id);
-                toast.success(`Node "${selectedNode.data.label}" deleted`);
-              } else {
-                toast.info('Select a node first to delete it');
-              }
-            }}
-          >
-            <Trash2 className="size-4" />
-            Delete Selected Node
-          </ContextMenuItem>
-          <ContextMenuItem
-            variant="destructive"
-            className="gap-2"
-            onSelect={() => {
-              const selectedEdge = edges.find((e) => e.selected);
-              if (selectedEdge && onDeleteEdge) {
-                onDeleteEdge(selectedEdge.id);
-                toast.success('Edge deleted');
-              } else {
-                toast.info('Select an edge first to delete it');
-              }
-            }}
-          >
-            <Trash2 className="size-4" />
-            Delete Selected Edge
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
+      <ReactFlow
+        nodes={augmentedNodes}
+        edges={edges}
+        onNodesChange={handleNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={handleConnect}
+        onNodeDoubleClick={handleNodeDoubleClick}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.3 }}
+        zoomOnDoubleClick={false}
+        minZoom={0.2}
+        maxZoom={2}
+        defaultEdgeOptions={{
+          type: 'smoothstep',
+          animated: true,
+          style: { stroke: TEAL, strokeWidth: 2 },
+          labelStyle: { fill: TEAL, fontSize: 12, fontWeight: 600 },
+          labelBgStyle: { fill: '#ffffff', fillOpacity: 0.9 },
+          labelBgPadding: [8, 4] as [number, number],
+          labelBgBorderRadius: 4,
+        }}
+        proOptions={{ hideAttribution: true }}
+        className="!bg-gradient-to-br !from-gray-50 !via-stone-50 !to-gray-100"
+      >
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={24}
+          size={1}
+          color="#d1d5db"
+        />
+        <Controls
+          className="!bg-white !border-gray-200 !shadow-md [&>button]:!border-gray-200 [&>button]:!rounded-md [&>button]:!w-8 [&>button]:!h-8"
+          showInteractive={false}
+        />
+        <MiniMap
+          className="!bg-white !border-gray-200 !shadow-md"
+          nodeColor={(node) => {
+            const data = node.data as CustomNodeData;
+            return data?.color || TEAL;
+          }}
+          maskColor="rgba(0,0,0,0.08)"
+          pannable
+          zoomable
+        />
+      </ReactFlow>
     </div>
   );
 }

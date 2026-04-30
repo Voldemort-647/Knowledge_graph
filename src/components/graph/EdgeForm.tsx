@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import { GitBranch, Loader2 } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { GitBranch, Loader2, ArrowRight } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -23,6 +24,21 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { createEdge, fetchNodes, type RawNode } from '@/services/api';
+
+const RELATIONSHIP_SUGGESTIONS = [
+  'founded',
+  'leads',
+  'created',
+  'related_to',
+  'part_of',
+  'works_at',
+  'uses',
+  'located_in',
+  'produced',
+  'owns',
+  'collaborates_with',
+  'influenced',
+];
 
 interface EdgeFormProps {
   open: boolean;
@@ -147,6 +163,37 @@ export default function EdgeForm({ open, onOpenChange, onEdgeCreated }: EdgeForm
               </Select>
             </div>
 
+            {/* Visual direction indicator */}
+            {selectedSource && (
+              <div className="flex items-center justify-center gap-3 py-1">
+                <div className="flex items-center gap-1.5">
+                  <div
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: selectedSource.color }}
+                  />
+                  <span className="text-xs font-medium text-gray-600">
+                    {selectedSource.label}
+                  </span>
+                </div>
+                <ArrowRight className="size-4 text-gray-400" />
+                <div className="flex items-center gap-1.5">
+                  {selectedTarget ? (
+                    <>
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: selectedTarget.color }}
+                      />
+                      <span className="text-xs font-medium text-gray-600">
+                        {selectedTarget.label}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-gray-400">?</span>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Target Node */}
             <div className="space-y-2">
               <Label htmlFor="target-node" className="text-sm font-medium">
@@ -172,11 +219,30 @@ export default function EdgeForm({ open, onOpenChange, onEdgeCreated }: EdgeForm
               </Select>
             </div>
 
-            {/* Relationship */}
+            {/* Relationship Suggestions */}
             <div className="space-y-2">
-              <Label htmlFor="relationship" className="text-sm font-medium">
+              <Label className="text-sm font-medium">
                 Relationship <span className="text-red-500">*</span>
               </Label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {RELATIONSHIP_SUGGESTIONS.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => setRelationship(suggestion)}
+                    className={`
+                      px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150
+                      ${
+                        relationship === suggestion
+                          ? 'bg-teal-600 text-white shadow-sm scale-105'
+                          : 'bg-gray-100 text-gray-500 hover:bg-teal-50 hover:text-teal-700 hover:border-teal-200 border border-gray-200'
+                      }
+                    `}
+                  >
+                    {suggestion.replace(/_/g, ' ')}
+                  </button>
+                ))}
+              </div>
               <Input
                 id="relationship"
                 value={relationship}
@@ -190,7 +256,11 @@ export default function EdgeForm({ open, onOpenChange, onEdgeCreated }: EdgeForm
 
             {/* Preview */}
             {selectedSource && selectedTarget && relationship.trim() && (
-              <div className="rounded-lg border bg-gray-50 p-3">
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-xl border bg-gradient-to-r from-gray-50 to-white p-3"
+              >
                 <p className="text-xs text-muted-foreground mb-2">Preview</p>
                 <div className="flex items-center gap-2 text-sm flex-wrap">
                   <div className="flex items-center gap-1.5">
@@ -202,7 +272,7 @@ export default function EdgeForm({ open, onOpenChange, onEdgeCreated }: EdgeForm
                   </div>
                   <span className="text-muted-foreground mx-1">→</span>
                   <span className="text-teal-600 font-medium px-2 py-0.5 bg-teal-50 rounded-full text-xs">
-                    {relationship.trim()}
+                    {relationship.trim().replace(/_/g, ' ')}
                   </span>
                   <span className="text-muted-foreground mx-1">→</span>
                   <div className="flex items-center gap-1.5">
@@ -213,7 +283,7 @@ export default function EdgeForm({ open, onOpenChange, onEdgeCreated }: EdgeForm
                     <span className="font-semibold">{selectedTarget.label}</span>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             )}
 
             <DialogFooter className="pt-2">

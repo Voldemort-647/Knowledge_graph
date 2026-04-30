@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   ReactFlowProvider,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   type Connection,
 } from '@xyflow/react';
 import { toast } from 'sonner';
@@ -14,8 +15,10 @@ import {
   RotateCcw,
   Trash2,
   Maximize2,
+  Search,
+  BarChart3,
+  Keyboard,
   ZoomIn,
-  ZoomOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,12 +42,19 @@ import GraphCanvas, {
 } from '@/components/graph/GraphCanvas';
 import NodeForm from '@/components/graph/NodeForm';
 import EdgeForm from '@/components/graph/EdgeForm';
+import NodeEditDialog from '@/components/graph/NodeEditDialog';
+import ConnectionDialog from '@/components/graph/ConnectionDialog';
+import SearchPanel from '@/components/graph/SearchPanel';
+import StatsPanel from '@/components/graph/StatsPanel';
+import ExportButton from '@/components/graph/ExportButton';
+import KeyboardShortcutsDialog from '@/components/graph/KeyboardShortcutsDialog';
 import PromptInput from '@/components/graph/PromptInput';
 import {
   fetchGraph,
   deleteNode as apiDeleteNode,
   deleteEdge as apiDeleteEdge,
   createEdge,
+  clearGraph,
   type NLPResponse,
 } from '@/services/api';
 
@@ -57,6 +67,22 @@ function KnowledgeGraphPage() {
   const [edgeFormOpen, setEdgeFormOpen] = useState(false);
   const [nlpExpanded, setNlpExpanded] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+
+  // New state for dialogs and panels
+  const [editingNode, setEditingNode] = useState<{
+    id: string; label: string; imageUrl: string | null; color: string;
+  } | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [connectionData, setConnectionData] = useState<{
+    source: string; target: string; sourceLabel: string; targetLabel: string;
+  } | null>(null);
+  const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
+  const [searchPanelOpen, setSearchPanelOpen] = useState(false);
+  const [statsPanelOpen, setStatsPanelOpen] = useState(false);
+  const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
+  const [pendingConnectionEdge, setPendingConnectionEdge] = useState<{ id: string } | null>(null);
+
+  const { fitView, setCenter, getNodes } = useReactFlow();
 
   // Load graph from API on mount
   const loadGraph = useCallback(async () => {
@@ -83,7 +109,6 @@ function KnowledgeGraphPage() {
       try {
         await apiDeleteNode(id);
         setNodes((nds) => nds.filter((n) => n.id !== id));
-        // Also remove connected edges
         setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
       } catch {
         toast.error('Failed to delete node');
@@ -105,28 +130,134 @@ function KnowledgeGraphPage() {
     [setEdges]
   );
 
-  // Handle new connection from handle drag
+  // Handle new connection from handle drag — open ConnectionDialog
   const handleConnect = useCallback(
-    async (connection: Connection) => {
+    (connection: Connection) => {
       if (!connection.source || !connection.target) return;
       if (connection.source === connection.target) {
         toast.error('Cannot create a self-loop');
         return;
       }
+
+      const sourceNode = nodes.find((n) => n.id === connection.source);
+      const targetNode = nodes.find((n) => n.id === connection.target);
+
+      if (!sourceNode || !targetNode) return;
+
+      setConnectionData({
+        source: connection.source,
+        target: connection.target,
+        sourceLabel: sourceNode.data.label,
+        targetLabel: targetNode.data.label,
+      });
+      setConnectionDialogOpen(true);
+    },
+    [nodes]
+  );
+
+  // Handle connection dialog confirm
+  const handleConnectionConfirm = useCallback(
+    async (relationship: string) => {
+      if (!connectionData) return;
       try {
         await createEdge({
-          sourceNodeId: connection.source,
-          targetNodeId: connection.target,
-          relationship: 'related_to',
+          sourceNodeId: connectionData.source,
+          targetNodeId: connectionData.target,
+          relationship,
         });
-        // Reload graph to get the new edge with proper formatting
+        toast.success(`Connection "${relationship}" created`);
         await loadGraph();
-        toast.success('Edge created between nodes');
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to create edge');
+        toast.error(err instanceof Error ? err.message : 'Failed to create connection');
+      }
+      setConnectionData(null);
+      setConnectionDialogOpen(false);
+    },
+    [connectionData, loadGraph]
+  );
+
+  // Handle connection dialog close — remove any temp edge
+  const handleConnectionDialogClose = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        setConnectionData(null);
+      }
+      setConnectionDialogOpen(open);
+    },
+    []
+  );
+
+  // Handle node double-click → open NodeEditDialog
+  const handleNodeDoubleClick = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (node) {
+        setEditingNode({
+          id: node.id,
+          label: node.data.label,
+          imageUrl: node.data.imageUrl || null,
+          color: node.data.color || '#0d9488',
+        });
+        setEditDialogOpen(true);
       }
     },
-    [loadGraph]
+    [nodes]
+  );
+
+  // Handle node updated from edit dialog
+  const handleNodeUpdated = useCallback(() => {
+    loadGraph();
+  }, [loadGraph]);
+
+  // Handle node deleted from edit dialog
+  const handleNodeDeleted = useCallback(
+    (id: string) => {
+      setNodes((nds) => nds.filter((n) => n.id !== id));
+      setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
+    },
+    [setNodes, setEdges]
+  );
+
+  // Handle search node select → center on node
+  const handleSearchNodeSelect = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (node) {
+        setCenter(node.position.x, node.position.y, { zoom: 1.5, duration: 500 });
+        // Select the node
+        setNodes((nds) =>
+          nds.map((n) => ({
+            ...n,
+            selected: n.id === nodeId,
+          }))
+        );
+      }
+      setSearchPanelOpen(false);
+    },
+    [nodes, setCenter, setNodes]
+  );
+
+  // Handle search node highlight
+  const handleSearchNodeHighlight = useCallback(
+    (nodeId: string | null) => {
+      if (nodeId === null) {
+        // Reset all nodes to their normal style
+        setNodes((nds) =>
+          nds.map((n) => ({
+            ...n,
+            className: undefined,
+          }))
+        );
+      } else {
+        setNodes((nds) =>
+          nds.map((n) => ({
+            ...n,
+            className: n.id === nodeId ? 'highlighted' : 'dimmed',
+          }))
+        );
+      }
+    },
+    [setNodes]
   );
 
   // Handle NLP result
@@ -142,46 +273,90 @@ function KnowledgeGraphPage() {
     [setNodes, setEdges]
   );
 
-  // Keyboard delete handler
+  // Keyboard shortcuts handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts when typing in inputs
+      const target = e.target as HTMLElement;
+      const isTyping =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable;
+
+      if (e.key === '?' && !isTyping) {
+        e.preventDefault();
+        setShortcutsDialogOpen(true);
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        // Deselect all
+        setNodes((nds) => nds.map((n) => ({ ...n, selected: false })));
+        setEdges((eds) => eds.map((ed) => ({ ...ed, selected: false })));
+        return;
+      }
+
+      // Ctrl+N — new node
+      if (e.ctrlKey && e.key === 'n') {
+        e.preventDefault();
+        setNodeFormOpen(true);
+        return;
+      }
+
+      // Ctrl+E — new edge
+      if (e.ctrlKey && e.key === 'e') {
+        e.preventDefault();
+        setEdgeFormOpen(true);
+        return;
+      }
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        const target = e.target as HTMLElement;
-        if (
-          target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable
-        ) {
-          return;
-        }
-        // Delete selected nodes
+        if (isTyping) return;
         const selectedNodes = nodes.filter((n) => n.selected);
-        const selectedEdges = edges.filter((e) => e.selected);
+        const selectedEdges = edges.filter((ed) => ed.selected);
 
         if (selectedNodes.length > 0) {
           selectedNodes.forEach((n) => handleDeleteNode(n.id));
         }
         if (selectedEdges.length > 0) {
-          selectedEdges.forEach((e) => handleDeleteEdge(e.id));
+          selectedEdges.forEach((ed) => handleDeleteEdge(ed.id));
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nodes, edges, handleDeleteNode, handleDeleteEdge]);
+  }, [nodes, edges, handleDeleteNode, handleDeleteEdge, setNodes, setEdges]);
+
+  // Listen for node-edit-click custom event from GraphCanvas
+  useEffect(() => {
+    const handleNodeEditClick = (e: Event) => {
+      const customEvent = e as CustomEvent<{ nodeId: string }>;
+      const nodeId = customEvent.detail.nodeId;
+      handleNodeDoubleClick(nodeId);
+    };
+    window.addEventListener('node-edit-click', handleNodeEditClick);
+    return () => window.removeEventListener('node-edit-click', handleNodeEditClick);
+  }, [handleNodeDoubleClick]);
 
   // Fit view helper
   const handleFitView = useCallback(() => {
-    // The ReactFlow fitView is handled by the component
-    loadGraph();
-  }, [loadGraph]);
+    fitView({ padding: 0.3, duration: 300 });
+  }, [fitView]);
 
-  // Clear all
-  const handleClearAll = useCallback(() => {
-    setNodes([]);
-    setEdges([]);
-    setClearConfirmOpen(false);
-    toast.info('Canvas cleared. Refresh to reload from database.');
+  // Clear all — including database
+  const handleClearAll = useCallback(async () => {
+    try {
+      await clearGraph();
+      setNodes([]);
+      setEdges([]);
+      setClearConfirmOpen(false);
+      toast.success('Graph cleared successfully');
+    } catch {
+      toast.error('Failed to clear graph from database');
+      setNodes([]);
+      setEdges([]);
+      setClearConfirmOpen(false);
+    }
   }, [setNodes, setEdges]);
 
   return (
@@ -216,6 +391,7 @@ function KnowledgeGraphPage() {
               onOpenChange={setEdgeFormOpen}
               onEdgeCreated={loadGraph}
             />
+            <ExportButton nodes={nodes} edges={edges} />
           </div>
         </div>
       </header>
@@ -246,7 +422,28 @@ function KnowledgeGraphPage() {
             onDeleteNode={handleDeleteNode}
             onDeleteEdge={handleDeleteEdge}
             onConnectNew={handleConnect}
+            onNodeDoubleClick={handleNodeDoubleClick}
           />
+        )}
+
+        {/* ─── Search Panel ─── */}
+        <AnimatePresence>
+          {searchPanelOpen && !isLoading && (
+            <SearchPanel
+              nodes={nodes.map((n) => ({
+                id: n.id,
+                label: n.data.label,
+                color: n.data.color || '#0d9488',
+              }))}
+              onNodeSelect={handleSearchNodeSelect}
+              onNodeHighlight={handleSearchNodeHighlight}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* ─── Stats Panel ─── */}
+        {!isLoading && (
+          <StatsPanel isOpen={statsPanelOpen} onToggle={() => setStatsPanelOpen((p) => !p)} />
         )}
 
         {/* ─── Floating Toolbar ─── */}
@@ -260,6 +457,54 @@ function KnowledgeGraphPage() {
               className="absolute right-4 top-4 z-20 flex flex-col gap-2"
             >
               <TooltipProvider delayDuration={300}>
+                {/* Search */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      className={`bg-white/90 backdrop-blur-sm shadow-md border-gray-200 h-9 w-9 rounded-lg ${searchPanelOpen ? 'bg-teal-50 border-teal-200' : 'hover:bg-white hover:border-teal-200'}`}
+                      onClick={() => setSearchPanelOpen((p) => !p)}
+                    >
+                      <Search className="size-4 text-gray-600" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Search nodes</TooltipContent>
+                </Tooltip>
+
+                {/* Stats */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      className={`bg-white/90 backdrop-blur-sm shadow-md border-gray-200 h-9 w-9 rounded-lg ${statsPanelOpen ? 'bg-teal-50 border-teal-200' : 'hover:bg-white hover:border-teal-200'}`}
+                      onClick={() => setStatsPanelOpen((p) => !p)}
+                    >
+                      <BarChart3 className="size-4 text-gray-600" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Graph statistics</TooltipContent>
+                </Tooltip>
+
+                {/* Keyboard Shortcuts */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      className="bg-white/90 backdrop-blur-sm shadow-md border-gray-200 hover:bg-white hover:border-teal-200 h-9 w-9 rounded-lg"
+                      onClick={() => setShortcutsDialogOpen(true)}
+                    >
+                      <Keyboard className="size-4 text-gray-600" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Keyboard shortcuts (?)</TooltipContent>
+                </Tooltip>
+
+                {/* Divider */}
+                <div className="h-px bg-gray-200 mx-1" />
+
                 {/* Refresh */}
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -309,7 +554,7 @@ function KnowledgeGraphPage() {
           )}
         </AnimatePresence>
 
-        {/* ─── Empty State ─── */}
+        {/* ─── Empty State with Animated Illustration ─── */}
         {!isLoading && nodes.length === 0 && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -317,10 +562,76 @@ function KnowledgeGraphPage() {
             transition={{ delay: 0.5 }}
             className="absolute inset-0 flex items-center justify-center pointer-events-none z-10"
           >
-            <div className="text-center space-y-3 max-w-md px-4">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-100 to-teal-50 flex items-center justify-center mx-auto shadow-inner">
-                <Network className="size-8 text-teal-400" />
+            <div className="text-center space-y-4 max-w-md px-4">
+              {/* Animated floating nodes illustration */}
+              <div className="relative h-24 mx-auto max-w-[240px]">
+                {/* Central node */}
+                <motion.div
+                  animate={{ y: [0, -8, 0] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shadow-lg">
+                    <Network className="size-7 text-white" />
+                  </div>
+                </motion.div>
+
+                {/* Satellite node 1 */}
+                <motion.div
+                  animate={{ y: [0, -6, 0], x: [0, 2, 0] }}
+                  transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
+                  className="absolute left-2 top-1"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-md">
+                    <span className="text-[10px] font-bold text-white">A</span>
+                  </div>
+                </motion.div>
+
+                {/* Satellite node 2 */}
+                <motion.div
+                  animate={{ y: [0, 6, 0], x: [0, -2, 0] }}
+                  transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+                  className="absolute right-2 bottom-1"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-500 flex items-center justify-center shadow-md">
+                    <span className="text-[10px] font-bold text-white">B</span>
+                  </div>
+                </motion.div>
+
+                {/* Satellite node 3 */}
+                <motion.div
+                  animate={{ y: [0, 5, 0] }}
+                  transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
+                  className="absolute right-4 top-2"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center shadow-sm">
+                    <span className="text-[9px] font-bold text-white">C</span>
+                  </div>
+                </motion.div>
+
+                {/* Connection lines (decorative SVG) */}
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 240 96">
+                  <motion.line
+                    x1="120" y1="48" x2="36" y2="24"
+                    stroke="#d1d5db" strokeWidth="1.5" strokeDasharray="4 3"
+                    animate={{ opacity: [0.3, 0.6, 0.3] }}
+                    transition={{ duration: 3, repeat: Infinity }}
+                  />
+                  <motion.line
+                    x1="120" y1="48" x2="200" y2="72"
+                    stroke="#d1d5db" strokeWidth="1.5" strokeDasharray="4 3"
+                    animate={{ opacity: [0.3, 0.6, 0.3] }}
+                    transition={{ duration: 3, repeat: Infinity, delay: 0.5 }}
+                  />
+                  <motion.line
+                    x1="120" y1="48" x2="190" y2="28"
+                    stroke="#d1d5db" strokeWidth="1" strokeDasharray="3 3"
+                    animate={{ opacity: [0.2, 0.5, 0.2] }}
+                    transition={{ duration: 3, repeat: Infinity, delay: 1 }}
+                  />
+                </svg>
               </div>
+
               <h2 className="text-lg font-semibold text-gray-700">
                 Your graph is empty
               </h2>
@@ -375,8 +686,8 @@ function KnowledgeGraphPage() {
       {/* ─── Footer ─── */}
       <footer className="bg-white/60 backdrop-blur-sm border-t border-gray-200 py-3 px-4 mt-auto">
         <div className="max-w-screen-2xl mx-auto flex items-center justify-between text-xs text-gray-500">
-          <p>Knowledge Graph Builder &middot; Drag nodes to rearrange &middot; Right-click to delete</p>
-          <p className="hidden sm:block">Press Delete/Backspace to remove selected items</p>
+          <p>Knowledge Graph Builder &middot; Double-click nodes to edit &middot; Drag handles to connect</p>
+          <p className="hidden sm:block">Press <kbd className="px-1 py-0.5 bg-gray-100 rounded text-[10px] font-mono">?</kbd> for shortcuts</p>
         </div>
       </footer>
 
@@ -384,9 +695,9 @@ function KnowledgeGraphPage() {
       <Dialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Clear Canvas</DialogTitle>
+            <DialogTitle>Clear Graph</DialogTitle>
             <DialogDescription>
-              This will remove all nodes and edges from the canvas. This does not delete data from the database.
+              This will permanently remove all nodes and edges from both the canvas and the database. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -407,6 +718,29 @@ function KnowledgeGraphPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ─── Node Edit Dialog ─── */}
+      <NodeEditDialog
+        node={editingNode}
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        onNodeUpdated={handleNodeUpdated}
+        onNodeDeleted={handleNodeDeleted}
+      />
+
+      {/* ─── Connection Dialog ─── */}
+      <ConnectionDialog
+        connection={connectionData}
+        open={connectionDialogOpen}
+        onOpenChange={handleConnectionDialogClose}
+        onConfirm={handleConnectionConfirm}
+      />
+
+      {/* ─── Keyboard Shortcuts Dialog ─── */}
+      <KeyboardShortcutsDialog
+        open={shortcutsDialogOpen}
+        onOpenChange={setShortcutsDialogOpen}
+      />
     </div>
   );
 }
