@@ -217,22 +217,54 @@ body::before {
   }
 }
 
-/* ─── Connecting target dashed border animation ─── */
+/* ─── Task 6: Connection line animation (dashed, animated) ─── */
+.react-flow__connection-line {
+  stroke: #0d9488 !important;
+  stroke-width: 2 !important;
+  stroke-dasharray: 8 4 !important;
+  animation: connection-line-dash 0.6s linear infinite !important;
+}
+
+.dark .react-flow__connection-line {
+  stroke: #5eead4 !important;
+}
+
+@keyframes connection-line-dash {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+/* ─── Task 6: Pulsing glow on connecting target node ─── */
 .react-flow__node.connecting-target > div {
-  animation: dashed-border-rotate 8s linear infinite;
-  border: 2px dashed rgba(13, 148, 136, 0.5) !important;
+  animation: connecting-target-pulse 1.2s ease-in-out infinite !important;
+  border: 2px dashed rgba(13, 148, 136, 0.6) !important;
   border-radius: 12px !important;
 }
 
-@keyframes dashed-border-rotate {
-  0% {
+@keyframes connecting-target-pulse {
+  0%, 100% {
     border-color: rgba(13, 148, 136, 0.3);
+    box-shadow: 0 0 0 0 rgba(13, 148, 136, 0.15);
   }
   50% {
-    border-color: rgba(13, 148, 136, 0.7);
+    border-color: rgba(13, 148, 136, 0.8);
+    box-shadow: 0 0 16px 4px rgba(13, 148, 136, 0.25);
   }
-  100% {
-    border-color: rgba(13, 148, 136, 0.3);
+}
+
+.dark .react-flow__node.connecting-target > div {
+  animation: connecting-target-pulse-dark 1.2s ease-in-out infinite !important;
+}
+
+@keyframes connecting-target-pulse-dark {
+  0%, 100% {
+    border-color: rgba(94, 234, 212, 0.25);
+    box-shadow: 0 0 0 0 rgba(94, 234, 212, 0.1);
+  }
+  50% {
+    border-color: rgba(94, 234, 212, 0.7);
+    box-shadow: 0 0 20px 6px rgba(94, 234, 212, 0.2);
   }
 }
 
@@ -265,7 +297,7 @@ body::before {
   transition: opacity 0.3s ease;
 }
 
-/* ─── Subtle grid background pattern overlay (alternating dot sizes) ─── */
+/* ─── Task 4: Sophisticated dot grid background with radial gradient glow ─── */
 .react-flow__background {
   background-image:
     radial-gradient(circle, currentColor 0.8px, transparent 0.8px),
@@ -274,24 +306,76 @@ body::before {
   background-position: 0 0, 12px 12px !important;
 }
 
-/* ─── Minimap ─── */
-.react-flow__minimap {
-  border-radius: 12px !important;
-  overflow: hidden !important;
+/* Radial gradient glow overlay for canvas depth */
+.react-flow__background::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(13, 148, 136, 0.04) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
 }
 
-.react-flow__controls {
-  border-radius: 12px !important;
+.dark .react-flow__background::after {
+  background: radial-gradient(ellipse at center, rgba(94, 234, 212, 0.03) 0%, transparent 55%);
+}
+
+/* ─── Task 2: Enhanced Minimap styling with glassmorphism ─── */
+.react-flow__minimap {
+  border-radius: 14px !important;
   overflow: hidden !important;
-  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1) !important;
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(13, 148, 136, 0.12) !important;
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06) !important;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease !important;
+}
+
+.react-flow__minimap:hover {
+  border-color: rgba(13, 148, 136, 0.25) !important;
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ─── Task 3: Enhanced Controls styling with glassmorphism & teal accents ─── */
+.react-flow__controls {
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(13, 148, 136, 0.1) !important;
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+  transition: box-shadow 0.2s ease !important;
+}
+
+.react-flow__controls:hover {
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.08) !important;
 }
 
 .react-flow__controls button {
-  border-bottom: 1px solid #e5e7eb !important;
+  border-bottom: 1px solid rgba(13, 148, 136, 0.08) !important;
+  transition: all 0.15s ease !important;
+  width: 32px !important;
+  height: 32px !important;
 }
 
 .react-flow__controls button:last-child {
   border-bottom: none !important;
+}
+
+.react-flow__controls button:hover {
+  background-color: rgba(13, 148, 136, 0.08) !important;
+  fill: #0d9488 !important;
+}
+
+.react-flow__controls button svg {
+  fill: #6b7280 !important;
+  transition: fill 0.15s ease !important;
+}
+
+.react-flow__controls button:hover svg {
+  fill: #0d9488 !important;
 }
 
 .react-flow__attribution {
@@ -304,28 +388,41 @@ body::before {
 }
 
 .dark .react-flow__minimap {
-  background-color: oklch(0.17 0 0) !important;
-  border: 1px solid oklch(1 0 0 / 12%) !important;
+  background-color: rgba(23, 23, 23, 0.88) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(94, 234, 212, 0.1) !important;
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+}
+
+.dark .react-flow__minimap:hover {
+  border-color: rgba(94, 234, 212, 0.2) !important;
 }
 
 .dark .react-flow__minimap-node {
   opacity: 0.9;
 }
 
+.dark .react-flow__minimap-mask {
+  fill: rgba(0, 0, 0, 0.45) !important;
+}
+
 .dark .react-flow__controls {
-  background-color: oklch(0.17 0 0) !important;
-  border: 1px solid oklch(1 0 0 / 12%) !important;
-  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3) !important;
+  background-color: rgba(23, 23, 23, 0.88) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(94, 234, 212, 0.08) !important;
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2) !important;
 }
 
 .dark .react-flow__controls button {
-  border-bottom: 1px solid oklch(1 0 0 / 8%) !important;
-  fill: oklch(0.85 0 0) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  fill: oklch(0.75 0 0) !important;
 }
 
 .dark .react-flow__controls button:hover {
-  background-color: oklch(0.25 0 0) !important;
-  fill: oklch(0.985 0 0) !important;
+  background-color: rgba(94, 234, 212, 0.1) !important;
+  fill: #5eead4 !important;
 }
 
 .dark .react-flow__controls button:last-child {
@@ -333,7 +430,11 @@ body::before {
 }
 
 .dark .react-flow__controls button svg {
-  fill: oklch(0.85 0 0) !important;
+  fill: oklch(0.75 0 0) !important;
+}
+
+.dark .react-flow__controls button:hover svg {
+  fill: #5eead4 !important;
 }
 
 .dark .react-flow__edge-textbg {
@@ -610,6 +711,20 @@ body::before {
   animation: stat-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+/* ─── Edge label pill styling ─── */
+.kg-edge-label-bg {
+  rx: 999 !important;
+}
+
+.react-flow__edge-textbg.kg-edge-label-bg {
+  stroke-width: 0.5 !important;
+  stroke: rgba(13, 148, 136, 0.15) !important;
+}
+
+.dark .react-flow__edge-textbg.kg-edge-label-bg {
+  stroke: rgba(94, 234, 212, 0.15) !important;
+}
+
 /* ─── Node selected gradient shimmer ─── */
 @keyframes node-shimmer {
   0% {
@@ -730,6 +845,26 @@ body::before {
   border-color: #0d9488 !important;
 }
 
+/* ─── Animated loading dots ─── */
+@keyframes loading-dot-bounce {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.loading-dot {
+  animation: loading-dot-bounce 1.4s ease-in-out infinite both;
+}
+
+.loading-dot:nth-child(1) { animation-delay: -0.32s; }
+.loading-dot:nth-child(2) { animation-delay: -0.16s; }
+.loading-dot:nth-child(3) { animation-delay: 0s; }
+
 /* ─── Reduced noise texture (more subtle) ─── */
 body::before {
   opacity: 0.012;
@@ -737,4 +872,94 @@ body::before {
 
 .dark body::before {
   opacity: 0.015;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Task 1-8: Additional Styling
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Task 1: Enhanced edge label pill with teal tint ─── */
+.react-flow__edge-textbg.kg-edge-label-bg {
+  fill: rgba(240, 253, 250, 0.95) !important;
+  stroke-width: 0.5 !important;
+  stroke: rgba(13, 148, 136, 0.18) !important;
+}
+
+.dark .react-flow__edge-textbg.kg-edge-label-bg {
+  fill: rgba(20, 30, 38, 0.92) !important;
+  stroke: rgba(94, 234, 212, 0.18) !important;
+}
+
+.react-flow__edge-text {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+}
+
+/* ─── Task 5: Node hover scale + glow ring ─── */
+.react-flow__node:not(.selected):hover {
+  z-index: 5 !important;
+}
+
+.react-flow__node:not(.selected):hover .kg-node-card {
+  transform: scale(1.02);
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.12), 0 4px 8px -3px rgba(0, 0, 0, 0.06) !important;
+}
+
+.dark .react-flow__node:not(.selected):hover .kg-node-card {
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.3), 0 4px 8px -3px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* ─── Task 8: Floating particles animation for empty state ─── */
+@keyframes float-particle-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.3; }
+  25% { transform: translate(12px, -20px) scale(1.1); opacity: 0.6; }
+  50% { transform: translate(-8px, -35px) scale(0.9); opacity: 0.4; }
+  75% { transform: translate(15px, -15px) scale(1.05); opacity: 0.5; }
+}
+
+@keyframes float-particle-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.2; }
+  25% { transform: translate(-15px, -10px) scale(0.95); opacity: 0.5; }
+  50% { transform: translate(10px, -25px) scale(1.1); opacity: 0.3; }
+  75% { transform: translate(-5px, -18px) scale(1); opacity: 0.45; }
+}
+
+@keyframes float-particle-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.25; }
+  33% { transform: translate(8px, -15px) scale(1.08); opacity: 0.5; }
+  66% { transform: translate(-12px, -28px) scale(0.92); opacity: 0.35; }
+}
+
+.empty-state-particle-1 { animation: float-particle-1 6s ease-in-out infinite; }
+.empty-state-particle-2 { animation: float-particle-2 7s ease-in-out infinite 1s; }
+.empty-state-particle-3 { animation: float-particle-3 5.5s ease-in-out infinite 2s; }
+.empty-state-particle-4 { animation: float-particle-1 8s ease-in-out infinite 3s; }
+.empty-state-particle-5 { animation: float-particle-2 6.5s ease-in-out infinite 0.5s; }
+.empty-state-particle-6 { animation: float-particle-3 7.5s ease-in-out infinite 1.5s; }
+
+/* ─── Task 8: CTA gradient button hover ─── */
+.cta-gradient-btn {
+  background: linear-gradient(135deg, #0d9488 0%, #14b8a6 50%, #0f766e 100%);
+  background-size: 200% 200%;
+  transition: all 0.3s ease;
+}
+
+.cta-gradient-btn:hover {
+  background-position: 100% 100%;
+  box-shadow: 0 4px 15px -3px rgba(13, 148, 136, 0.4), 0 0 0 1px rgba(13, 148, 136, 0.1);
+  transform: translateY(-1px);
+}
+
+.cta-gradient-btn:active {
+  transform: translateY(0);
+}
+
+.dark .cta-gradient-btn {
+  background: linear-gradient(135deg, #0f766e 0%, #0d9488 50%, #14b8a6 100%);
+  background-size: 200% 200%;
+}
+
+.dark .cta-gradient-btn:hover {
+  background-position: 100% 100%;
+  box-shadow: 0 4px 15px -3px rgba(94, 234, 212, 0.3), 0 0 0 1px rgba(94, 234, 212, 0.15);
 }

@@ -7,6 +7,7 @@ export interface GraphNode {
   data: {
     label: string;
     imageUrl?: string | null;
+    emoji?: string | null;
     color?: string;
   };
 }
@@ -36,6 +37,7 @@ export interface GraphData {
 export interface CreateNodeData {
   label: string;
   imageUrl?: string;
+  emoji?: string;
   color?: string;
   posX?: number;
   posY?: number;
@@ -45,6 +47,7 @@ export interface UpdateNodeData {
   id: string;
   label?: string;
   imageUrl?: string;
+  emoji?: string;
   color?: string;
 }
 
@@ -84,6 +87,7 @@ export interface RawNode {
   id: string;
   label: string;
   imageUrl: string | null;
+  emoji: string | null;
   color: string;
   posX: number;
   posY: number;

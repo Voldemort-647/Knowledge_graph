@@ -39,6 +39,7 @@ export async function GET() {
       data: {
         label: node.label,
         imageUrl: node.imageUrl,
+        emoji: node.emoji,
         color: node.color,
       },
     }));

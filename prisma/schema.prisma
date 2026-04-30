@@ -11,6 +11,7 @@ model GraphNode {
   id        String   @id @default(cuid())
   label     String
   imageUrl  String?
+  emoji     String?
   color     String   @default("#0d9488")
   posX      Float    @default(0)
   posY      Float    @default(0)

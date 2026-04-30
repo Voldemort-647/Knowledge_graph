@@ -53,7 +53,11 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {children}
-          <Toaster position="bottom-right" richColors closeButton />
+          <Toaster position="bottom-right" richColors closeButton toastOptions={{
+            classNames: {
+              success: '!border-teal-200 dark:!border-teal-800 !bg-teal-50 dark:!bg-teal-950/50 !text-teal-800 dark:!text-teal-100',
+            },
+          }} />
         </ThemeProvider>
       </body>
     </html>

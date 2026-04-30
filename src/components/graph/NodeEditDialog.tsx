@@ -28,6 +28,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import { updateNode, deleteNode } from '@/services/api';
 
+const PRESET_EMOJIS = [
+  '📦', '💡', '🧑', '💼', '🌐', '🏠', '🎯', '⭐',
+  '🔧', '📊', '🎨', '🚀', '🧪', '📚', '🏗️', '💰',
+  '🔬', '🎓', '🏥', '🎮', '⚡', '🔒', '📧', '🔑',
+];
+
 const PRESET_COLORS = [
   '#0d9488', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316',
   '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7',
@@ -35,7 +41,7 @@ const PRESET_COLORS = [
 ];
 
 interface NodeEditDialogProps {
-  node: { id: string; label: string; imageUrl: string | null; color: string } | null;
+  node: { id: string; label: string; imageUrl: string | null; emoji: string | null; color: string } | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onNodeUpdated: () => void;
@@ -51,6 +57,7 @@ export default function NodeEditDialog({
 }: NodeEditDialogProps) {
   const [label, setLabel] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [emoji, setEmoji] = useState('');
   const [color, setColor] = useState(PRESET_COLORS[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -59,6 +66,7 @@ export default function NodeEditDialog({
     if (node && open) {
       setLabel(node.label);
       setImageUrl(node.imageUrl || '');
+      setEmoji(node.emoji || '');
       setColor(node.color || PRESET_COLORS[0]);
     }
   }, [node, open]);
@@ -73,6 +81,7 @@ export default function NodeEditDialog({
         id: node.id,
         label: label.trim(),
         imageUrl: imageUrl.trim() || undefined,
+        emoji: emoji || undefined,
         color,
       });
       toast.success(`Node "${label.trim()}" updated successfully`);
@@ -145,6 +154,32 @@ export default function NodeEditDialog({
               placeholder="https://example.com/image.jpg"
               className="h-9"
             />
+          </div>
+
+          {/* Emoji Picker */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">
+              Emoji <span className="text-muted-foreground font-normal">(optional)</span>
+            </Label>
+            <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900/50">
+              <button
+                type="button"
+                onClick={() => setEmoji('')}
+                className={`w-8 h-8 rounded-md flex items-center justify-center transition-all duration-150 hover:bg-gray-200 dark:hover:bg-neutral-700 text-xs text-gray-400 ${!emoji ? 'ring-2 ring-teal-500 bg-teal-50 dark:bg-teal-900/30' : ''}`}
+              >
+                ✕
+              </button>
+              {PRESET_EMOJIS.map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => setEmoji(e)}
+                  className={`w-8 h-8 rounded-md flex items-center justify-center transition-all duration-150 hover:bg-gray-200 dark:hover:bg-neutral-700 text-lg ${emoji === e ? 'ring-2 ring-teal-500 bg-teal-50 dark:bg-teal-900/30 scale-110' : ''}`}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Color Picker */}

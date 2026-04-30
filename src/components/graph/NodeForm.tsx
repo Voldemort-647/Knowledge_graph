@@ -29,6 +29,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import { createNode, updateNode, deleteNode } from '@/services/api';
 
+const PRESET_EMOJIS = [
+  '📦', '💡', '🧑', '💼', '🌐', '🏠', '🎯', '⭐',
+  '🔧', '📊', '🎨', '🚀', '🧪', '📚', '🏗️', '💰',
+  '🔬', '🎓', '🏥', '🎮', '⚡', '🔒', '📧', '🔑',
+];
+
 const PRESET_COLORS = [
   '#0d9488', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316',
   '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7',
@@ -39,6 +45,7 @@ interface EditingNode {
   id: string;
   label: string;
   imageUrl: string | null;
+  emoji: string | null;
   color: string;
 }
 
@@ -61,6 +68,7 @@ export default function NodeForm({
 }: NodeFormProps) {
   const [label, setLabel] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [emoji, setEmoji] = useState('');
   const [color, setColor] = useState(PRESET_COLORS[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isEditing = !!editingNode;
@@ -69,6 +77,7 @@ export default function NodeForm({
     if (editingNode && open) {
       setLabel(editingNode.label);
       setImageUrl(editingNode.imageUrl || '');
+      setEmoji(editingNode.emoji || '');
       setColor(editingNode.color || PRESET_COLORS[0]);
     }
   }, [editingNode, open]);
@@ -76,6 +85,7 @@ export default function NodeForm({
   const resetForm = () => {
     setLabel('');
     setImageUrl('');
+    setEmoji('');
     setColor(PRESET_COLORS[0]);
   };
 
@@ -90,6 +100,7 @@ export default function NodeForm({
           id: editingNode.id,
           label: label.trim(),
           imageUrl: imageUrl.trim() || undefined,
+          emoji: emoji || undefined,
           color,
         });
         toast.success(`Node "${label.trim()}" updated successfully`);
@@ -98,6 +109,7 @@ export default function NodeForm({
         await createNode({
           label: label.trim(),
           imageUrl: imageUrl.trim() || undefined,
+          emoji: emoji || undefined,
           color,
         });
         toast.success(`Node "${label.trim()}" created successfully`);
@@ -200,6 +212,32 @@ export default function NodeForm({
             />
           </div>
 
+          {/* Emoji Picker */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">
+              Emoji <span className="text-muted-foreground font-normal">(optional)</span>
+            </Label>
+            <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900/50">
+              <button
+                type="button"
+                onClick={() => setEmoji('')}
+                className={`w-8 h-8 rounded-md flex items-center justify-center transition-all duration-150 hover:bg-gray-200 dark:hover:bg-neutral-700 text-xs text-gray-400 ${!emoji ? 'ring-2 ring-teal-500 bg-teal-50 dark:bg-teal-900/30' : ''}`}
+              >
+                ✕
+              </button>
+              {PRESET_EMOJIS.map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => setEmoji(e)}
+                  className={`w-8 h-8 rounded-md flex items-center justify-center transition-all duration-150 hover:bg-gray-200 dark:hover:bg-neutral-700 text-lg ${emoji === e ? 'ring-2 ring-teal-500 bg-teal-50 dark:bg-teal-900/30 scale-110' : ''}`}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Color Picker - 2-row grid with tooltips */}
           <div className="space-y-2">
             <Label className="text-sm font-medium">Color</Label>
@@ -257,6 +295,7 @@ export default function NodeForm({
                     }}
                   />
                   <div className="relative flex items-center gap-3">
+                    {emoji && <span className="text-xl">{emoji}</span>}
                     <div
                       className="w-3.5 h-3.5 rounded-full ring-2 ring-white shadow-sm"
                       style={{ backgroundColor: color }}

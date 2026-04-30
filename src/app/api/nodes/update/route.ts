@@ -5,7 +5,7 @@ import { db } from '@/lib/db';
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, label, imageUrl, color } = body;
+    const { id, label, imageUrl, emoji, color } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -28,6 +28,9 @@ export async function PATCH(request: NextRequest) {
     }
     if (imageUrl !== undefined) {
       updateData.imageUrl = imageUrl.trim() || null;
+    }
+    if (emoji !== undefined) {
+      updateData.emoji = emoji.trim() || null;
     }
     if (color !== undefined && typeof color === 'string') {
       updateData.color = color;

@@ -5,7 +5,7 @@ import { db } from '@/lib/db';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { label, imageUrl, color, posX, posY } = body;
+    const { label, imageUrl, emoji, color, posX, posY } = body;
 
     if (!label || typeof label !== 'string' || label.trim().length === 0) {
       return NextResponse.json(
@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
       data: {
         label: label.trim(),
         imageUrl: imageUrl || null,
+        emoji: emoji || null,
         color: color || '#0d9488',
         posX: posX ?? 0,
         posY: posY ?? 0,

@@ -34,6 +34,10 @@ import {
   LayoutTemplate,
   ZoomOut,
   Map,
+  Expand,
+  Eraser,
+  ImageIcon,
+  ChevronsUpDown,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -80,6 +84,9 @@ import DropZone from '@/components/graph/DropZone';
 import TemplateDialog from '@/components/graph/TemplateDialog';
 import ShareButton, { ImportFromUrlDialog } from '@/components/graph/ShareButton';
 import OnboardingTutorial from '@/components/graph/OnboardingTutorial';
+import GroupOverlay from '@/components/graph/GroupOverlay';
+import AnnotationLayer from '@/components/graph/AnnotationLayer';
+import AddAnnotationButton from '@/components/graph/AddAnnotationButton';
 import {
   fetchGraph,
   deleteNode as apiDeleteNode,
@@ -99,6 +106,7 @@ import {
 } from '@/lib/graph-sharing';
 import { useGroupStore } from '@/store/group-store';
 import { useOnboardingStore } from '@/store/onboarding-store';
+import { useAnnotationStore } from '@/store/annotation-store';
 import {
   getNextGroupColor,
   generateGroupLabel,
@@ -127,7 +135,7 @@ function KnowledgeGraphPage() {
 
   // New state for dialogs and panels
   const [editingNode, setEditingNode] = useState<{
-    id: string; label: string; imageUrl: string | null; color: string;
+    id: string; label: string; imageUrl: string | null; emoji: string | null; color: string;
   } | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [connectionData, setConnectionData] = useState<{
@@ -193,7 +201,10 @@ function KnowledgeGraphPage() {
   const showSelectionBar = selectedNodeCount + selectedEdgeCount >= 2;
 
   // Group store
-  const { groups, addGroup } = useGroupStore();
+  const { groups, addGroup, removeGroup } = useGroupStore();
+
+  // Annotation store
+  const { addAnnotation, annotations } = useAnnotationStore();
 
   // Onboarding: auto-start on first visit
   const { hasCompletedOnboarding, startOnboarding } = useOnboardingStore();
@@ -346,6 +357,7 @@ function KnowledgeGraphPage() {
           id: node.id,
           label: node.data.label,
           imageUrl: node.data.imageUrl || null,
+          emoji: node.data.emoji || null,
           color: node.data.color || '#0d9488',
         });
         setEditDialogOpen(true);
@@ -821,6 +833,44 @@ function KnowledgeGraphPage() {
     }
   }, [setNodes, setEdges, clearHistory, pushCurrentSnapshot]);
 
+  // Quick-connect from inspector (Feature 5)
+  const handleQuickConnect = useCallback(
+    (sourceNodeId: string) => {
+      const sourceNode = nodes.find((n) => n.id === sourceNodeId);
+      if (!sourceNode) return;
+      // Set the edge form open with source pre-selected
+      setEdgeFormOpen(true);
+      toast.info('Select a target node to connect to');
+    },
+    [nodes]
+  );
+
+  // Add annotation at center of viewport (Feature 3)
+  const handleAddAnnotation = useCallback(() => {
+    const canvasEl = document.querySelector('.react-flow__viewport');
+    if (canvasEl) {
+      const rect = canvasEl.getBoundingClientRect();
+      addAnnotation({
+        x: rect.left + rect.width / 2 - 100,
+        y: rect.top + rect.height / 2 - 60,
+      });
+      toast.success('Annotation added');
+    } else {
+      addAnnotation({ x: 300, y: 300 });
+      toast.success('Annotation added');
+    }
+  }, [addAnnotation]);
+
+  // Export graph as PNG (Feature 4 - Quick Action)
+  const handleExportPNG = useCallback(async () => {
+    try {
+      const { exportGraphAsPNG } = await import('@/lib/export-image');
+      await exportGraphAsPNG();
+    } catch {
+      toast.error('Failed to export graph');
+    }
+  }, []);
+
   // Layout direction icons
   const layoutDirIcons: Record<LayoutDirection, typeof ArrowRight> = {
     LR: ArrowRight,
@@ -911,9 +961,17 @@ function KnowledgeGraphPage() {
       <main className="flex-1 relative overflow-hidden">
         {isLoading ? (
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="space-y-4 text-center">
-              <Skeleton className="h-8 w-48 mx-auto" />
-              <Skeleton className="h-4 w-32 mx-auto" />
+            <div className="space-y-6 text-center">
+              <div className="flex items-center justify-center gap-3">
+                <Network className="size-10 text-teal-400 animate-pulse" />
+              </div>
+              <Skeleton className="h-8 w-48 mx-auto rounded-lg" />
+              <Skeleton className="h-4 w-32 mx-auto rounded-lg" />
+              <div className="flex items-center justify-center gap-1.5 pt-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-teal-400 loading-dot" />
+                <div className="w-2.5 h-2.5 rounded-full bg-teal-400 loading-dot" />
+                <div className="w-2.5 h-2.5 rounded-full bg-teal-400 loading-dot" />
+              </div>
               <p className="text-sm text-muted-foreground">Loading graph...</p>
             </div>
           </div>
@@ -936,6 +994,12 @@ function KnowledgeGraphPage() {
               onMove={handleViewportMove}
               showMiniMap={showMiniMap}
             />
+
+            {/* ─── Group Overlay (Feature 1) ─── */}
+            <GroupOverlay nodes={nodes} />
+
+            {/* ─── Annotation Layer (Feature 3) ─── */}
+            <AnnotationLayer />
 
             {/* ─── Selection Info Bar ─── */}
             <AnimatePresence>
@@ -1144,7 +1208,20 @@ function KnowledgeGraphPage() {
                       </Button>
                     </motion.div>
                   </TooltipTrigger>
-                  <TooltipContent side="left">Search nodes</TooltipContent>
+                  <TooltipContent side="left">Search (? + S)</TooltipContent>
+                </Tooltip>
+
+                {/* Add Annotation (Feature 3) */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <AddAnnotationButton
+                        onClick={handleAddAnnotation}
+                        disabled={annotations.length >= 20}
+                      />
+                    </motion.div>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Add Note</TooltipContent>
                 </Tooltip>
 
                 {/* Stats */}
@@ -1239,7 +1316,7 @@ function KnowledgeGraphPage() {
           )}
         </AnimatePresence>
 
-        {/* ─── Empty State with Animated Illustration ─── */}
+        {/* ─── Task 8: Improved Empty State with particles & gradient CTAs ─── */}
         {!isLoading && nodes.length === 0 && (
           <motion.div
             ref={emptyStateRef}
@@ -1248,9 +1325,24 @@ function KnowledgeGraphPage() {
             transition={{ delay: 0.5 }}
             className="absolute inset-0 flex items-center justify-center pointer-events-none z-10"
           >
-            <div className="text-center space-y-4 max-w-md px-4">
+            {/* Floating particles */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+              <div className="empty-state-particle-1 absolute top-[15%] left-[20%] w-2 h-2 rounded-full bg-teal-300/30 dark:bg-teal-400/20" />
+              <div className="empty-state-particle-2 absolute top-[25%] right-[25%] w-1.5 h-1.5 rounded-full bg-amber-300/30 dark:bg-amber-400/15" />
+              <div className="empty-state-particle-3 absolute top-[60%] left-[15%] w-2.5 h-2.5 rounded-full bg-emerald-300/25 dark:bg-emerald-400/15" />
+              <div className="empty-state-particle-4 absolute top-[70%] right-[18%] w-1.5 h-1.5 rounded-full bg-rose-300/20 dark:bg-rose-400/15" />
+              <div className="empty-state-particle-5 absolute top-[40%] left-[35%] w-2 h-2 rounded-full bg-teal-200/20 dark:bg-teal-300/10" />
+              <div className="empty-state-particle-6 absolute top-[80%] right-[40%] w-2 h-2 rounded-full bg-amber-200/20 dark:bg-amber-300/10" />
+            </div>
+
+            <div className="text-center space-y-5 max-w-md px-4 relative">
               {/* Animated floating nodes illustration with parallax */}
-              <div className="relative h-24 mx-auto max-w-[240px]">
+              <div className="relative h-28 mx-auto max-w-[260px]">
+                {/* Subtle radial glow behind illustration */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-40 h-40 rounded-full bg-teal-100/40 dark:bg-teal-900/20 blur-2xl" />
+                </div>
+
                 {/* Central node */}
                 <motion.div
                   animate={{
@@ -1260,8 +1352,8 @@ function KnowledgeGraphPage() {
                   transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
                   className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
                 >
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shadow-lg">
-                    <Network className="size-7 text-white" />
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shadow-lg shadow-teal-500/20">
+                    <Network className="size-8 text-white" />
                   </div>
                 </motion.div>
 
@@ -1272,14 +1364,14 @@ function KnowledgeGraphPage() {
                     x: [0, 2, 0],
                   }}
                   transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-                  className="absolute left-2 top-1"
+                  className="absolute left-1 top-0"
                   style={{
                     transform: `translate(${mousePos.x * -5}px, ${mousePos.y * -5}px)`,
                     transition: 'transform 0.3s ease-out',
                   }}
                 >
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center shadow-md">
-                    <span className="text-[10px] font-bold text-white">A</span>
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center shadow-md">
+                    <span className="text-[11px] font-bold text-white">A</span>
                   </div>
                 </motion.div>
 
@@ -1290,14 +1382,14 @@ function KnowledgeGraphPage() {
                     x: [0, -2, 0],
                   }}
                   transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-                  className="absolute right-2 bottom-1"
+                  className="absolute right-1 bottom-0"
                   style={{
                     transform: `translate(${mousePos.x * 6}px, ${mousePos.y * 4}px)`,
                     transition: 'transform 0.3s ease-out',
                   }}
                 >
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-500 flex items-center justify-center shadow-md">
-                    <span className="text-[10px] font-bold text-white">B</span>
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-500 flex items-center justify-center shadow-md">
+                    <span className="text-[11px] font-bold text-white">B</span>
                   </div>
                 </motion.div>
 
@@ -1305,65 +1397,90 @@ function KnowledgeGraphPage() {
                 <motion.div
                   animate={{ y: [0, 5, 0] }}
                   transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
-                  className="absolute right-4 top-2"
+                  className="absolute right-5 top-0"
                   style={{
                     transform: `translate(${mousePos.x * -4}px, ${mousePos.y * 6}px)`,
                     transition: 'transform 0.3s ease-out',
                   }}
                 >
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm">
-                    <span className="text-[9px] font-bold text-white">C</span>
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm">
+                    <span className="text-[10px] font-bold text-white">C</span>
+                  </div>
+                </motion.div>
+
+                {/* Satellite node 4 - new */}
+                <motion.div
+                  animate={{ y: [0, -4, 0], x: [0, 3, 0] }}
+                  transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut', delay: 1.5 }}
+                  className="absolute left-5 bottom-2"
+                  style={{
+                    transform: `translate(${mousePos.x * 4}px, ${mousePos.y * -5}px)`,
+                    transition: 'transform 0.3s ease-out',
+                  }}
+                >
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
+                    <span className="text-[9px] font-bold text-white">D</span>
                   </div>
                 </motion.div>
 
                 {/* Connection lines (decorative SVG) */}
-                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 240 96">
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 260 112">
                   <motion.line
-                    x1="120" y1="48" x2="36" y2="24"
+                    x1="130" y1="56" x2="30" y2="22"
                     stroke="currentColor"
-                    className="text-gray-300 dark:text-neutral-600"
+                    className="text-teal-300/40 dark:text-teal-600/30"
                     strokeWidth="1.5" strokeDasharray="4 3"
-                    animate={{ opacity: [0.3, 0.6, 0.3] }}
+                    animate={{ opacity: [0.3, 0.7, 0.3] }}
                     transition={{ duration: 3, repeat: Infinity }}
                   />
                   <motion.line
-                    x1="120" y1="48" x2="200" y2="72"
+                    x1="130" y1="56" x2="220" y2="84"
                     stroke="currentColor"
-                    className="text-gray-300 dark:text-neutral-600"
+                    className="text-emerald-300/40 dark:text-emerald-600/30"
                     strokeWidth="1.5" strokeDasharray="4 3"
-                    animate={{ opacity: [0.3, 0.6, 0.3] }}
+                    animate={{ opacity: [0.3, 0.7, 0.3] }}
                     transition={{ duration: 3, repeat: Infinity, delay: 0.5 }}
                   />
                   <motion.line
-                    x1="120" y1="48" x2="190" y2="28"
+                    x1="130" y1="56" x2="208" y2="24"
                     stroke="currentColor"
-                    className="text-gray-300 dark:text-neutral-600"
+                    className="text-rose-300/30 dark:text-rose-600/20"
                     strokeWidth="1" strokeDasharray="3 3"
                     animate={{ opacity: [0.2, 0.5, 0.2] }}
                     transition={{ duration: 3, repeat: Infinity, delay: 1 }}
+                  />
+                  <motion.line
+                    x1="130" y1="56" x2="38" y2="84"
+                    stroke="currentColor"
+                    className="text-violet-300/30 dark:text-violet-600/20"
+                    strokeWidth="1" strokeDasharray="3 3"
+                    animate={{ opacity: [0.2, 0.5, 0.2] }}
+                    transition={{ duration: 3, repeat: Infinity, delay: 1.5 }}
                   />
                 </svg>
               </div>
 
               {/* Gradient text heading */}
-              <h2 className="text-lg font-semibold gradient-text">
+              <h2 className="text-xl font-bold gradient-text">
                 Your graph is empty
               </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-                Add nodes by dragging from the palette, or start with a template.
+              <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed max-w-xs mx-auto">
+                Add nodes by dragging from the palette, generate with AI, or start with a template.
               </p>
-              <div className="flex gap-2 justify-center pointer-events-auto flex-wrap">
+              <div className="flex gap-2.5 justify-center pointer-events-auto flex-wrap pt-1">
                 <Button
                   size="sm"
-                  className="bg-teal-600 hover:bg-teal-700 text-white gap-2"
+                  className="cta-gradient-btn text-white gap-2 border-0 shadow-md shadow-teal-500/20"
                   onClick={() => setNodeFormOpen(true)}
                 >
-                  Add Node
+                  <motion.span whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex items-center gap-2">
+                    Add Node
+                  </motion.span>
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-teal-200 dark:border-teal-800/50 text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 gap-2 pulse-glow"
+                  className="border-teal-200 dark:border-teal-800/50 text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 gap-2 pulse-glow hover:scale-[1.02] active:scale-[0.98] transition-transform"
                   onClick={() => setNlpExpanded(true)}
                 >
                   <ZoomIn className="size-4" />
@@ -1372,29 +1489,31 @@ function KnowledgeGraphPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-gray-200 dark:border-neutral-700/50 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-neutral-800/40 gap-2"
+                  className="border-gray-200 dark:border-neutral-700/50 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-neutral-800/40 gap-2 hover:scale-[1.02] active:scale-[0.98] transition-transform"
                   onClick={() => setTemplateDialogOpen(true)}
                 >
                   <LayoutTemplate className="size-4" />
-                  Load Template
+                  Templates
                 </Button>
               </div>
 
               {/* Quick Start section with template thumbnails */}
-              <div className="pointer-events-auto pt-2">
-                <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-wider font-medium">
+              <div className="pointer-events-auto pt-1">
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-2.5 uppercase tracking-wider font-medium">
                   Quick Start
                 </p>
                 <div className="flex gap-2 justify-center flex-wrap">
                   {GRAPH_TEMPLATES.map((template) => (
-                    <button
+                    <motion.button
                       key={template.id}
+                      whileHover={{ scale: 1.04, y: -1 }}
+                      whileTap={{ scale: 0.97 }}
                       onClick={() => handleQuickTemplateLoad(template.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/70 dark:bg-neutral-800/70 border border-gray-200/60 dark:border-neutral-700/50 shadow-sm hover:shadow-md hover:-translate-y-px transition-all duration-200 text-xs text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/80 dark:bg-neutral-800/80 border border-gray-200/60 dark:border-neutral-700/50 shadow-sm hover:shadow-md hover:border-teal-200 dark:hover:border-teal-700/40 transition-all duration-200 text-xs text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100 backdrop-blur-sm"
                     >
                       <span className="text-sm">{template.icon}</span>
                       <span className="font-medium">{template.name}</span>
-                    </button>
+                    </motion.button>
                   ))}
                 </div>
               </div>
@@ -1458,6 +1577,45 @@ function KnowledgeGraphPage() {
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
+
+              {/* Separator */}
+              <div className="w-px h-4 bg-gradient-to-b from-transparent via-gray-300 dark:via-neutral-600 to-transparent" />
+
+              {/* Quick Actions Dropdown (Feature 4) */}
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-all duration-200">
+                          <ChevronsUpDown className="size-3" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuItem onClick={handleFitView}>
+                          <Expand className="size-4 mr-2" />
+                          Fit View
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setClearConfirmOpen(true)}>
+                          <Eraser className="size-4 mr-2" />
+                          Clear All
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleExportPNG}>
+                          <ImageIcon className="size-4 mr-2" />
+                          Export PNG
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setShowMiniMap((p) => !p)}>
+                          <Map className="size-4 mr-2" />
+                          {showMiniMap ? 'Hide Minimap' : 'Toggle Minimap'}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    Quick Actions
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
           </motion.div>
         )}
@@ -1471,15 +1629,48 @@ function KnowledgeGraphPage() {
             onEdit={handleNodeDoubleClick}
             onDelete={handleDeleteNode}
             onFocus={handleFocusNode}
+            onConnect={handleQuickConnect}
           />
         )}
       </main>
 
-      {/* ─── Footer ─── */}
-      <footer className="bg-white/60 dark:bg-neutral-900/60 backdrop-blur-sm border-t border-gray-200 dark:border-neutral-800 py-3 px-4 mt-auto">
+      {/* ─── Task 7: Enhanced Footer ─── */}
+      <footer className="bg-white/70 dark:bg-neutral-900/70 backdrop-blur-md border-t border-gray-200/80 dark:border-neutral-800 py-2.5 px-4 mt-auto relative overflow-hidden">
+        {/* Subtle top gradient line */}
+        <div className="absolute top-0 left-0 right-0 animated-teal-line opacity-20" />
         <div className="max-w-screen-2xl mx-auto flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-          <p>Knowledge Graph Builder &middot; Double-click nodes to edit &middot; Drag handles to connect</p>
-          <p className="hidden sm:block">Press <kbd className="px-1 py-0.5 bg-gray-100 dark:bg-neutral-800 rounded text-[10px] font-mono">?</kbd> for shortcuts</p>
+          {/* Left: Stats summary */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Network className="size-3.5 text-teal-500 dark:text-teal-400 hidden sm:block flex-shrink-0" />
+            <span className="hidden sm:inline">
+              <span className="font-medium text-gray-600 dark:text-gray-300">{nodes.length}</span>
+              <span className="text-gray-400 dark:text-gray-500">{nodes.length === 1 ? ' node' : ' nodes'}</span>
+              <span className="mx-1.5 text-gray-300 dark:text-gray-600">&middot;</span>
+              <span className="font-medium text-gray-600 dark:text-gray-300">{edges.length}</span>
+              <span className="text-gray-400 dark:text-gray-500">{edges.length === 1 ? ' edge' : ' edges'}</span>
+              <span className="mx-1.5 text-gray-300 dark:text-gray-600">&middot;</span>
+              <span className="font-medium text-gray-600 dark:text-gray-300">{Object.keys(groups).length}</span>
+              <span className="text-gray-400 dark:text-gray-500">{Object.keys(groups).length === 1 ? ' group' : ' groups'}</span>
+            </span>
+            {/* Mobile: icons only */}
+            <span className="sm:hidden flex items-center gap-1.5">
+              <Network className="size-3 text-teal-500 dark:text-teal-400" />
+              <span className="font-medium text-gray-600 dark:text-gray-300">{nodes.length}</span>
+              <span className="mx-0.5 text-gray-300 dark:text-gray-600">&middot;</span>
+              <span className="font-medium text-gray-600 dark:text-gray-300">{edges.length}</span>
+            </span>
+          </div>
+          {/* Right: Shortcut hint + credit */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShortcutsDialogOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 text-gray-400 dark:text-gray-500 hover:text-teal-600 dark:hover:text-teal-400 transition-colors"
+            >
+              <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-neutral-800 rounded text-[10px] font-mono border border-gray-200 dark:border-neutral-700 shadow-sm">?</kbd>
+              <span>shortcuts</span>
+            </button>
+            <span className="text-gray-300 dark:text-gray-600">v2.0</span>
+          </div>
         </div>
       </footer>
 

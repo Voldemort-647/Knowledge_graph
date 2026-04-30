@@ -37,6 +37,7 @@ import { updateNodePositions } from '@/services/api';
 export interface CustomNodeData {
   label: string;
   imageUrl?: string | null;
+  emoji?: string | null;
   color?: string;
   edgeCount?: number;
   [key: string]: unknown;
@@ -67,6 +68,7 @@ const TEAL = '#0d9488';
 function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) {
   const nodeColor = data.color || TEAL;
   const hasImage = data.imageUrl && data.imageUrl.trim().length > 0;
+  const hasEmoji = data.emoji && data.emoji.trim().length > 0;
   const edgeCount = data.edgeCount ?? 0;
   const isLongLabel = data.label.length > 20;
 
@@ -80,17 +82,17 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
 
   const nodeContent = (
     <div className="group relative kg-node-enter">
-      {/* Dramatic glow effect behind node — wider, more colorful spread */}
+      {/* Task 5: Dramatic glow effect behind node with color-matched glow ring */}
       <div
         className="absolute -inset-3 rounded-2xl opacity-0 group-hover:opacity-100 transition-all duration-500 pointer-events-none"
         style={{
-          boxShadow: `0 0 40px 10px ${hexToRgba(nodeColor, 0.22)}, 0 0 16px 4px ${hexToRgba(nodeColor, 0.1)}`,
+          boxShadow: `0 0 40px 10px ${hexToRgba(nodeColor, 0.22)}, 0 0 16px 4px ${hexToRgba(nodeColor, 0.1)}, inset 0 0 0 2px ${hexToRgba(nodeColor, 0.08)}`,
         }}
       />
 
       <div
         className={`
-          relative flex items-center gap-3 rounded-xl px-4 py-3 shadow-md
+          kg-node-card relative flex items-center gap-3 rounded-xl px-4 py-3 shadow-md
           transition-all duration-300 cursor-grab active:cursor-grabbing
           hover:shadow-xl hover:shadow-lg
           bg-white dark:bg-neutral-800/90 dark:border-neutral-700/50
@@ -142,6 +144,13 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
 
         {/* Content */}
         <div className="relative flex items-center gap-3 min-w-0">
+          {/* Emoji display (large, replaces image thumbnail) */}
+          {hasEmoji && !hasImage && (
+            <span className="text-2xl flex-shrink-0 select-none" role="img" aria-label="node emoji">
+              {data.emoji}
+            </span>
+          )}
+
           {/* Image thumbnail (larger, rounded-full) */}
           {hasImage && (
             <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-gray-100 dark:ring-neutral-600 shadow-sm">
@@ -416,10 +425,11 @@ function GraphCanvasInner({
           type: 'smoothstep',
           animated: true,
           style: { stroke: TEAL, strokeWidth: 2 },
-          labelStyle: { fill: TEAL, fontSize: 12, fontWeight: 600 },
+          labelStyle: { fill: TEAL, fontSize: 11, fontWeight: 600 },
           labelBgStyle: { fill: isDark ? '#1c1f26' : '#ffffff', fillOpacity: 0.9 },
           labelBgPadding: [8, 4] as [number, number],
-          labelBgBorderRadius: 4,
+          labelBgBorderRadius: 999,
+          labelBgClass: 'kg-edge-label-bg',
         }}
         proOptions={{ hideAttribution: true }}
         className={!isDark ? '!bg-gradient-to-br !from-gray-50 !via-stone-50 !to-gray-100 react-flow-canvas-light' : 'react-flow-canvas-dark react-flow-selection-box-dark'}
@@ -469,6 +479,7 @@ export function mapApiToReactFlow(data: GraphData): {
       data: {
         label: n.data.label,
         imageUrl: n.data.imageUrl,
+        emoji: n.data.emoji,
         color: n.data.color,
       },
     })) as CustomNodeType[],
@@ -498,7 +509,8 @@ export function mapApiToReactFlow(data: GraphData): {
           fillOpacity: 0.9,
         },
         labelBgPadding: e.labelBgPadding || ([8, 4] as [number, number]),
-        labelBgBorderRadius: e.labelBgBorderRadius || 4,
+        labelBgBorderRadius: e.labelBgBorderRadius || 999,
+        labelBgClass: 'kg-edge-label-bg',
         edgeType: (e.edgeType as string) || 'smoothstep',
         lineStyle,
         thickness,

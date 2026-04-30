@@ -2,7 +2,7 @@
 
 import { memo, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Pencil, Trash2, Crosshair, ArrowRightLeft, ImageIcon } from 'lucide-react';
+import { Pencil, Trash2, Crosshair, ArrowRightLeft, ImageIcon, Link } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import type { CustomNodeType } from '@/components/graph/GraphCanvas';
@@ -15,6 +15,7 @@ interface NodeInspectorProps {
   onEdit: (nodeId: string) => void;
   onDelete: (nodeId: string) => void;
   onFocus: (nodeId: string) => void;
+  onConnect?: (nodeId: string) => void;
 }
 
 function NodeInspectorInner({
@@ -24,6 +25,7 @@ function NodeInspectorInner({
   onEdit,
   onDelete,
   onFocus,
+  onConnect,
 }: NodeInspectorProps) {
   const nodeColor = node.data.color || '#0d9488';
   const hasImage = node.data.imageUrl && node.data.imageUrl.trim().length > 0;
@@ -124,6 +126,17 @@ function NodeInspectorInner({
               >
                 <Crosshair className="size-3.5" />
               </Button>
+              {onConnect && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 hover:bg-teal-50 dark:hover:bg-teal-900/30 text-gray-500 dark:text-gray-400 hover:text-teal-600 dark:hover:text-teal-400"
+                  onClick={() => onConnect(node.id)}
+                  title="Connect from this node"
+                >
+                  <Link className="size-3.5" />
+                </Button>
+              )}
               <Button
                 size="icon"
                 variant="ghost"
@@ -180,6 +193,7 @@ interface NodeInspectorContainerProps {
   onEdit: (nodeId: string) => void;
   onDelete: (nodeId: string) => void;
   onFocus: (nodeId: string) => void;
+  onConnect?: (nodeId: string) => void;
 }
 
 export default function NodeInspector({
@@ -189,6 +203,7 @@ export default function NodeInspector({
   onEdit,
   onDelete,
   onFocus,
+  onConnect,
 }: NodeInspectorContainerProps) {
   return (
     <AnimatePresence>
@@ -200,6 +215,7 @@ export default function NodeInspector({
           onEdit={onEdit}
           onDelete={onDelete}
           onFocus={onFocus}
+          onConnect={onConnect}
         />
       )}
     </AnimatePresence>
