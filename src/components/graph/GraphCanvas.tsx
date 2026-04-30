@@ -19,6 +19,13 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Pencil } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { useTheme } from 'next-themes';
 import type { GraphData } from '@/services/api';
 import { updateNodePositions } from '@/services/api';
 
@@ -52,6 +59,7 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
   const nodeColor = data.color || TEAL;
   const hasImage = data.imageUrl && data.imageUrl.trim().length > 0;
   const edgeCount = data.edgeCount ?? 0;
+  const isLongLabel = data.label.length > 20;
 
   // Convert hex to rgba with opacity
   const hexToRgba = (hex: string, alpha: number): string => {
@@ -61,14 +69,8 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   };
 
-  return (
-    <div
-      className="group relative"
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        window.dispatchEvent(new CustomEvent('node-edit-click', { detail: { nodeId: id } }));
-      }}
-    >
+  const nodeContent = (
+    <div className="group relative kg-node-enter">
       {/* Glow effect behind node */}
       <div
         className="absolute -inset-1 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
@@ -79,30 +81,32 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
 
       <div
         className={`
-          relative flex items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-md
+          relative flex items-center gap-3 rounded-xl px-4 py-3 shadow-md
           transition-all duration-200 cursor-grab active:cursor-grabbing
           hover:shadow-lg
-          ${selected ? 'ring-[3px] ring-offset-2 shadow-xl' : ''}
+          bg-white dark:bg-neutral-800/90 dark:border-neutral-700/50
+          ${selected
+            ? 'ring-[3px] ring-offset-2 ring-offset-white dark:ring-offset-neutral-900 shadow-xl'
+            : ''
+          }
         `}
         style={{
           borderLeft: `4px solid ${nodeColor}`,
           borderRadius: '12px',
-          ringColor: selected ? nodeColor : undefined,
-          // @ts-expect-error ring-color custom property
+          ...(selected ? {
+            boxShadow: `0 0 0 3px ${hexToRgba(nodeColor, 0.5)}, 0 0 20px 4px ${hexToRgba(nodeColor, 0.15)}`,
+          } : {}),
+          // @ts-expect-error CSS custom property for ring color
           '--tw-ring-color': selected ? nodeColor : undefined,
         }}
-        {...(selected && {
-          className: `relative flex items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-xl transition-all duration-200 cursor-grab active:cursor-grabbing ring-[3px] ring-offset-2`,
-          style: {
-            borderLeft: `4px solid ${nodeColor}`,
-            borderRadius: '12px',
-            boxShadow: `0 0 0 3px ${hexToRgba(nodeColor, 0.5)}, 0 0 20px 4px ${hexToRgba(nodeColor, 0.15)}`,
-          },
-        })}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          window.dispatchEvent(new CustomEvent('node-edit-click', { detail: { nodeId: id } }));
+        }}
       >
         {/* Gradient overlay */}
         <div
-          className="absolute inset-0 rounded-xl opacity-[0.03] pointer-events-none"
+          className="absolute inset-0 rounded-xl opacity-[0.03] dark:opacity-[0.06] pointer-events-none"
           style={{
             background: `linear-gradient(135deg, ${nodeColor}, transparent 60%)`,
           }}
@@ -122,7 +126,7 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
 
         {/* Handle label "in" on hover */}
         <div className="absolute -left-10 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-          <span className="text-[9px] font-mono text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+          <span className="text-[9px] font-mono text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-neutral-700 px-1.5 py-0.5 rounded">
             in
           </span>
         </div>
@@ -131,7 +135,7 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
         <div className="relative flex items-center gap-3 min-w-0">
           {/* Image thumbnail (larger, rounded-full) */}
           {hasImage && (
-            <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-gray-100 shadow-sm">
+            <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-gray-100 dark:ring-neutral-600 shadow-sm">
               <img
                 src={data.imageUrl as string}
                 alt={data.label}
@@ -144,7 +148,7 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
           )}
 
           {/* Label */}
-          <span className="font-semibold text-sm text-gray-800 max-w-[180px] truncate select-none">
+          <span className="font-semibold text-sm text-gray-800 dark:text-gray-100 max-w-[180px] truncate select-none">
             {data.label}
           </span>
 
@@ -161,15 +165,14 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
 
         {/* Edit icon button (appears on hover) */}
         <button
-          className="absolute -top-2 -right-2 size-6 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-150 hover:bg-teal-50 hover:border-teal-200 z-10"
+          className="absolute -top-2 -right-2 size-6 rounded-full bg-white dark:bg-neutral-700 shadow-md border border-gray-200 dark:border-neutral-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-150 hover:bg-teal-50 dark:hover:bg-teal-900/40 hover:border-teal-200 dark:hover:border-teal-700 z-10"
           onClick={(e) => {
             e.stopPropagation();
-            // Dispatch a custom event for parent to handle
             const event = new CustomEvent('node-edit-click', { detail: { nodeId: id } });
             window.dispatchEvent(event);
           }}
         >
-          <Pencil className="size-3 text-gray-500 group-hover:text-teal-600" />
+          <Pencil className="size-3 text-gray-500 dark:text-gray-400 group-hover:text-teal-600 dark:group-hover:text-teal-400" />
         </button>
 
         {/* Right Handle (Source) */}
@@ -186,13 +189,31 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
 
         {/* Handle label "out" on hover */}
         <div className="absolute -right-10 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-          <span className="text-[9px] font-mono text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+          <span className="text-[9px] font-mono text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-neutral-700 px-1.5 py-0.5 rounded">
             out
           </span>
         </div>
       </div>
     </div>
   );
+
+  // Wrap with tooltip for long labels
+  if (isLongLabel) {
+    return (
+      <TooltipProvider delayDuration={400}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {nodeContent}
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs text-sm">
+            {data.label}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return nodeContent;
 }
 
 /* ─── Main GraphCanvas ─── */
@@ -208,6 +229,8 @@ export default function GraphCanvas({
 }: GraphCanvasProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rfRef = useRef<HTMLDivElement>(null);
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
 
   // Compute edge counts per node
   const edgeCountMap = useMemo(() => {
@@ -331,30 +354,30 @@ export default function GraphCanvas({
           animated: true,
           style: { stroke: TEAL, strokeWidth: 2 },
           labelStyle: { fill: TEAL, fontSize: 12, fontWeight: 600 },
-          labelBgStyle: { fill: '#ffffff', fillOpacity: 0.9 },
+          labelBgStyle: { fill: isDark ? '#1c1f26' : '#ffffff', fillOpacity: 0.9 },
           labelBgPadding: [8, 4] as [number, number],
           labelBgBorderRadius: 4,
         }}
         proOptions={{ hideAttribution: true }}
-        className="!bg-gradient-to-br !from-gray-50 !via-stone-50 !to-gray-100"
+        className={!isDark ? '!bg-gradient-to-br !from-gray-50 !via-stone-50 !to-gray-100 react-flow-canvas-light' : 'react-flow-canvas-dark'}
       >
         <Background
           variant={BackgroundVariant.Dots}
           gap={24}
           size={1}
-          color="#d1d5db"
+          color={isDark ? '#374151' : '#d1d5db'}
         />
         <Controls
-          className="!bg-white !border-gray-200 !shadow-md [&>button]:!border-gray-200 [&>button]:!rounded-md [&>button]:!w-8 [&>button]:!h-8"
+          className={`!shadow-md ${!isDark ? '!bg-white !border-gray-200 [&>button]:!border-gray-200' : '!bg-neutral-800/90 !border-neutral-700/50 [&>button]:!border-neutral-700/50'} [&>button]:!rounded-md [&>button]:!w-8 [&>button]:!h-8`}
           showInteractive={false}
         />
         <MiniMap
-          className="!bg-white !border-gray-200 !shadow-md"
+          className={`!shadow-md ${!isDark ? '!bg-white !border-gray-200' : '!bg-neutral-800/90 !border-neutral-700/50'}`}
           nodeColor={(node) => {
             const data = node.data as CustomNodeData;
             return data?.color || TEAL;
           }}
-          maskColor="rgba(0,0,0,0.08)"
+          maskColor={isDark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.08)'}
           pannable
           zoomable
         />

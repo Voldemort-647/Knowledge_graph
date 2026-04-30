@@ -39,11 +39,11 @@ export async function GET() {
       type: 'smoothstep',
       animated: true,
       style: {
-        stroke: '#6366f1',
+        stroke: '#0d9488',
         strokeWidth: 2,
       },
       labelStyle: {
-        fill: '#6366f1',
+        fill: '#0d9488',
         fontSize: 12,
         fontWeight: 600,
       },

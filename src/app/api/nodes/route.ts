@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       data: {
         label: label.trim(),
         imageUrl: imageUrl || null,
-        color: color || '#6366f1',
+        color: color || '#0d9488',
         posX: posX ?? 0,
         posY: posY ?? 0,
       },

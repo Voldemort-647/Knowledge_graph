@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   ReactFlowProvider,
   useNodesState,
@@ -19,7 +19,10 @@ import {
   BarChart3,
   Keyboard,
   ZoomIn,
+  Moon,
+  Sun,
 } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -48,6 +51,7 @@ import SearchPanel from '@/components/graph/SearchPanel';
 import StatsPanel from '@/components/graph/StatsPanel';
 import ExportButton from '@/components/graph/ExportButton';
 import KeyboardShortcutsDialog from '@/components/graph/KeyboardShortcutsDialog';
+import NodeInspector from '@/components/graph/NodeInspector';
 import PromptInput from '@/components/graph/PromptInput';
 import {
   fetchGraph,
@@ -57,6 +61,16 @@ import {
   clearGraph,
   type NLPResponse,
 } from '@/services/api';
+
+/* ─── Toolbar button class ─── */
+const toolbarBtnBase =
+  'h-9 w-9 rounded-lg backdrop-blur-md border shadow-md transition-all duration-200';
+
+const toolbarBtnInactive =
+  'bg-white/70 dark:bg-neutral-900/70 border-gray-200/60 dark:border-neutral-700/50 text-gray-600 dark:text-gray-300 hover:bg-white/90 dark:hover:bg-neutral-800/90 hover:border-teal-300 dark:hover:border-teal-700 hover:text-teal-700 dark:hover:text-teal-400 hover:scale-105';
+
+const toolbarBtnActive =
+  'bg-teal-50/80 dark:bg-teal-900/30 border-teal-300 dark:border-teal-700/60 text-teal-700 dark:text-teal-400 shadow-teal-100/50 dark:shadow-teal-900/30';
 
 /* ─── Inner Page (needs ReactFlowProvider context) ─── */
 function KnowledgeGraphPage() {
@@ -80,9 +94,16 @@ function KnowledgeGraphPage() {
   const [searchPanelOpen, setSearchPanelOpen] = useState(false);
   const [statsPanelOpen, setStatsPanelOpen] = useState(false);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
-  const [pendingConnectionEdge, setPendingConnectionEdge] = useState<{ id: string } | null>(null);
 
   const { fitView, setCenter, getNodes } = useReactFlow();
+  const { resolvedTheme, setTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
+
+  // Compute selected nodes from React Flow state
+  const selectedNodes = useMemo(
+    () => nodes.filter((n) => n.selected),
+    [nodes]
+  );
 
   // Load graph from API on mount
   const loadGraph = useCallback(async () => {
@@ -241,7 +262,6 @@ function KnowledgeGraphPage() {
   const handleSearchNodeHighlight = useCallback(
     (nodeId: string | null) => {
       if (nodeId === null) {
-        // Reset all nodes to their normal style
         setNodes((nds) =>
           nds.map((n) => ({
             ...n,
@@ -312,14 +332,14 @@ function KnowledgeGraphPage() {
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (isTyping) return;
-        const selectedNodes = nodes.filter((n) => n.selected);
-        const selectedEdges = edges.filter((ed) => ed.selected);
+        const selNodes = nodes.filter((n) => n.selected);
+        const selEdges = edges.filter((ed) => ed.selected);
 
-        if (selectedNodes.length > 0) {
-          selectedNodes.forEach((n) => handleDeleteNode(n.id));
+        if (selNodes.length > 0) {
+          selNodes.forEach((n) => handleDeleteNode(n.id));
         }
-        if (selectedEdges.length > 0) {
-          selectedEdges.forEach((ed) => handleDeleteEdge(ed.id));
+        if (selEdges.length > 0) {
+          selEdges.forEach((ed) => handleDeleteEdge(ed.id));
         }
       }
     };
@@ -343,6 +363,17 @@ function KnowledgeGraphPage() {
     fitView({ padding: 0.3, duration: 300 });
   }, [fitView]);
 
+  // Focus on node helper (for inspector)
+  const handleFocusNode = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (node) {
+        setCenter(node.position.x, node.position.y, { zoom: 1.5, duration: 500 });
+      }
+    },
+    [nodes, setCenter]
+  );
+
   // Clear all — including database
   const handleClearAll = useCallback(async () => {
     try {
@@ -360,9 +391,9 @@ function KnowledgeGraphPage() {
   }, [setNodes, setEdges]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-stone-50 to-gray-100">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-stone-50 to-gray-100 dark:from-neutral-950 dark:via-[#0f1419] dark:to-neutral-950">
       {/* ─── Header ─── */}
-      <header className="bg-white/90 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-30">
+      <header className="bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md border-b border-gray-200 dark:border-neutral-800 sticky top-0 z-30">
         <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           {/* Title */}
           <div className="flex items-center gap-3">
@@ -370,10 +401,10 @@ function KnowledgeGraphPage() {
               <Network className="size-5 text-white" />
             </div>
             <div className="hidden sm:block">
-              <h1 className="text-base font-bold text-gray-900 leading-tight">
+              <h1 className="text-base font-bold text-gray-900 dark:text-gray-100 leading-tight">
                 Knowledge Graph Builder
               </h1>
-              <p className="text-[11px] text-gray-500 leading-tight">
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-tight">
                 Visualize entities and relationships
               </p>
             </div>
@@ -381,6 +412,25 @@ function KnowledgeGraphPage() {
 
           {/* Actions */}
           <div className="flex items-center gap-2">
+            {/* Theme toggle */}
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                    onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                  >
+                    {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {isDark ? 'Light mode' : 'Dark mode'}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
             <NodeForm
               open={nodeFormOpen}
               onOpenChange={setNodeFormOpen}
@@ -391,7 +441,7 @@ function KnowledgeGraphPage() {
               onOpenChange={setEdgeFormOpen}
               onEdgeCreated={loadGraph}
             />
-            <ExportButton nodes={nodes} edges={edges} />
+            <ExportButton nodes={nodes} edges={edges} onGraphUpdated={loadGraph} />
           </div>
         </div>
       </header>
@@ -446,7 +496,7 @@ function KnowledgeGraphPage() {
           <StatsPanel isOpen={statsPanelOpen} onToggle={() => setStatsPanelOpen((p) => !p)} />
         )}
 
-        {/* ─── Floating Toolbar ─── */}
+        {/* ─── Floating Toolbar (Glassmorphism) ─── */}
         <AnimatePresence>
           {!isLoading && (
             <motion.div
@@ -454,20 +504,22 @@ function KnowledgeGraphPage() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
               transition={{ delay: 0.3, duration: 0.3 }}
-              className="absolute right-4 top-4 z-20 flex flex-col gap-2"
+              className="absolute right-4 top-4 z-20 flex flex-col gap-1.5"
             >
               <TooltipProvider delayDuration={300}>
                 {/* Search */}
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className={`bg-white/90 backdrop-blur-sm shadow-md border-gray-200 h-9 w-9 rounded-lg ${searchPanelOpen ? 'bg-teal-50 border-teal-200' : 'hover:bg-white hover:border-teal-200'}`}
-                      onClick={() => setSearchPanelOpen((p) => !p)}
-                    >
-                      <Search className="size-4 text-gray-600" />
-                    </Button>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className={`${toolbarBtnBase} ${searchPanelOpen ? toolbarBtnActive : toolbarBtnInactive}`}
+                        onClick={() => setSearchPanelOpen((p) => !p)}
+                      >
+                        <Search className="size-4" />
+                      </Button>
+                    </motion.div>
                   </TooltipTrigger>
                   <TooltipContent side="left">Search nodes</TooltipContent>
                 </Tooltip>
@@ -475,14 +527,16 @@ function KnowledgeGraphPage() {
                 {/* Stats */}
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className={`bg-white/90 backdrop-blur-sm shadow-md border-gray-200 h-9 w-9 rounded-lg ${statsPanelOpen ? 'bg-teal-50 border-teal-200' : 'hover:bg-white hover:border-teal-200'}`}
-                      onClick={() => setStatsPanelOpen((p) => !p)}
-                    >
-                      <BarChart3 className="size-4 text-gray-600" />
-                    </Button>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className={`${toolbarBtnBase} ${statsPanelOpen ? toolbarBtnActive : toolbarBtnInactive}`}
+                        onClick={() => setStatsPanelOpen((p) => !p)}
+                      >
+                        <BarChart3 className="size-4" />
+                      </Button>
+                    </motion.div>
                   </TooltipTrigger>
                   <TooltipContent side="left">Graph statistics</TooltipContent>
                 </Tooltip>
@@ -490,32 +544,36 @@ function KnowledgeGraphPage() {
                 {/* Keyboard Shortcuts */}
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className="bg-white/90 backdrop-blur-sm shadow-md border-gray-200 hover:bg-white hover:border-teal-200 h-9 w-9 rounded-lg"
-                      onClick={() => setShortcutsDialogOpen(true)}
-                    >
-                      <Keyboard className="size-4 text-gray-600" />
-                    </Button>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className={`${toolbarBtnBase} ${toolbarBtnInactive}`}
+                        onClick={() => setShortcutsDialogOpen(true)}
+                      >
+                        <Keyboard className="size-4" />
+                      </Button>
+                    </motion.div>
                   </TooltipTrigger>
                   <TooltipContent side="left">Keyboard shortcuts (?)</TooltipContent>
                 </Tooltip>
 
                 {/* Divider */}
-                <div className="h-px bg-gray-200 mx-1" />
+                <div className="h-px bg-gray-200/60 dark:bg-neutral-700/40 mx-1.5" />
 
                 {/* Refresh */}
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className="bg-white/90 backdrop-blur-sm shadow-md border-gray-200 hover:bg-white hover:border-teal-200 h-9 w-9 rounded-lg"
-                      onClick={loadGraph}
-                    >
-                      <RotateCcw className="size-4 text-gray-600" />
-                    </Button>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className={`${toolbarBtnBase} ${toolbarBtnInactive}`}
+                        onClick={loadGraph}
+                      >
+                        <RotateCcw className="size-4" />
+                      </Button>
+                    </motion.div>
                   </TooltipTrigger>
                   <TooltipContent side="left">Refresh graph</TooltipContent>
                 </Tooltip>
@@ -523,14 +581,16 @@ function KnowledgeGraphPage() {
                 {/* Fit View */}
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className="bg-white/90 backdrop-blur-sm shadow-md border-gray-200 hover:bg-white hover:border-teal-200 h-9 w-9 rounded-lg"
-                      onClick={handleFitView}
-                    >
-                      <Maximize2 className="size-4 text-gray-600" />
-                    </Button>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className={`${toolbarBtnBase} ${toolbarBtnInactive}`}
+                        onClick={handleFitView}
+                      >
+                        <Maximize2 className="size-4" />
+                      </Button>
+                    </motion.div>
                   </TooltipTrigger>
                   <TooltipContent side="left">Fit view</TooltipContent>
                 </Tooltip>
@@ -538,14 +598,16 @@ function KnowledgeGraphPage() {
                 {/* Clear All */}
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className="bg-white/90 backdrop-blur-sm shadow-md border-gray-200 hover:bg-red-50 hover:border-red-200 h-9 w-9 rounded-lg"
-                      onClick={() => setClearConfirmOpen(true)}
-                    >
-                      <Trash2 className="size-4 text-gray-600" />
-                    </Button>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className={`${toolbarBtnBase} bg-white/70 dark:bg-neutral-900/70 border-gray-200/60 dark:border-neutral-700/50 text-gray-600 dark:text-gray-300 hover:bg-red-50/80 dark:hover:bg-red-900/20 hover:border-red-200 dark:hover:border-red-800/50 hover:text-red-600 dark:hover:text-red-400 hover:scale-105 shadow-md`}
+                        onClick={() => setClearConfirmOpen(true)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </motion.div>
                   </TooltipTrigger>
                   <TooltipContent side="left">Clear canvas</TooltipContent>
                 </Tooltip>
@@ -582,7 +644,7 @@ function KnowledgeGraphPage() {
                   transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
                   className="absolute left-2 top-1"
                 >
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-md">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center shadow-md">
                     <span className="text-[10px] font-bold text-white">A</span>
                   </div>
                 </motion.div>
@@ -604,7 +666,7 @@ function KnowledgeGraphPage() {
                   transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
                   className="absolute right-4 top-2"
                 >
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center shadow-sm">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm">
                     <span className="text-[9px] font-bold text-white">C</span>
                   </div>
                 </motion.div>
@@ -613,29 +675,35 @@ function KnowledgeGraphPage() {
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 240 96">
                   <motion.line
                     x1="120" y1="48" x2="36" y2="24"
-                    stroke="#d1d5db" strokeWidth="1.5" strokeDasharray="4 3"
+                    stroke="currentColor"
+                    className="text-gray-300 dark:text-neutral-600"
+                    strokeWidth="1.5" strokeDasharray="4 3"
                     animate={{ opacity: [0.3, 0.6, 0.3] }}
                     transition={{ duration: 3, repeat: Infinity }}
                   />
                   <motion.line
                     x1="120" y1="48" x2="200" y2="72"
-                    stroke="#d1d5db" strokeWidth="1.5" strokeDasharray="4 3"
+                    stroke="currentColor"
+                    className="text-gray-300 dark:text-neutral-600"
+                    strokeWidth="1.5" strokeDasharray="4 3"
                     animate={{ opacity: [0.3, 0.6, 0.3] }}
                     transition={{ duration: 3, repeat: Infinity, delay: 0.5 }}
                   />
                   <motion.line
                     x1="120" y1="48" x2="190" y2="28"
-                    stroke="#d1d5db" strokeWidth="1" strokeDasharray="3 3"
+                    stroke="currentColor"
+                    className="text-gray-300 dark:text-neutral-600"
+                    strokeWidth="1" strokeDasharray="3 3"
                     animate={{ opacity: [0.2, 0.5, 0.2] }}
                     transition={{ duration: 3, repeat: Infinity, delay: 1 }}
                   />
                 </svg>
               </div>
 
-              <h2 className="text-lg font-semibold text-gray-700">
+              <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
                 Your graph is empty
               </h2>
-              <p className="text-sm text-gray-500 leading-relaxed">
+              <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
                 Add nodes and edges using the buttons above, or try the AI generator to create a graph from natural language.
               </p>
               <div className="flex gap-2 justify-center pointer-events-auto">
@@ -649,7 +717,7 @@ function KnowledgeGraphPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-teal-200 text-teal-700 hover:bg-teal-50 gap-2"
+                  className="border-teal-200 dark:border-teal-800/50 text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 gap-2"
                   onClick={() => setNlpExpanded(true)}
                 >
                   <ZoomIn className="size-4" />
@@ -668,26 +736,38 @@ function KnowledgeGraphPage() {
             transition={{ delay: 0.5 }}
             className="absolute left-4 bottom-4 z-20"
           >
-            <div className="bg-white/90 backdrop-blur-sm rounded-lg border border-gray-200 shadow-sm px-3 py-1.5 flex items-center gap-3 text-xs text-gray-600">
+            <div className="bg-white/70 dark:bg-neutral-900/70 backdrop-blur-md rounded-lg border border-gray-200/60 dark:border-neutral-700/50 shadow-md px-3 py-1.5 flex items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
               <span className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-teal-500" />
                 {nodes.length} {nodes.length === 1 ? 'node' : 'nodes'}
               </span>
-              <span className="text-gray-300">|</span>
+              <span className="text-gray-300 dark:text-neutral-600">|</span>
               <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-gray-400" />
+                <span className="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500" />
                 {edges.length} {edges.length === 1 ? 'edge' : 'edges'}
               </span>
             </div>
           </motion.div>
         )}
+
+        {/* ─── Node Inspector Panel ─── */}
+        {!isLoading && (
+          <NodeInspector
+            selectedNodes={selectedNodes}
+            edges={edges}
+            allNodes={nodes}
+            onEdit={handleNodeDoubleClick}
+            onDelete={handleDeleteNode}
+            onFocus={handleFocusNode}
+          />
+        )}
       </main>
 
       {/* ─── Footer ─── */}
-      <footer className="bg-white/60 backdrop-blur-sm border-t border-gray-200 py-3 px-4 mt-auto">
-        <div className="max-w-screen-2xl mx-auto flex items-center justify-between text-xs text-gray-500">
+      <footer className="bg-white/60 dark:bg-neutral-900/60 backdrop-blur-sm border-t border-gray-200 dark:border-neutral-800 py-3 px-4 mt-auto">
+        <div className="max-w-screen-2xl mx-auto flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
           <p>Knowledge Graph Builder &middot; Double-click nodes to edit &middot; Drag handles to connect</p>
-          <p className="hidden sm:block">Press <kbd className="px-1 py-0.5 bg-gray-100 rounded text-[10px] font-mono">?</kbd> for shortcuts</p>
+          <p className="hidden sm:block">Press <kbd className="px-1 py-0.5 bg-gray-100 dark:bg-neutral-800 rounded text-[10px] font-mono">?</kbd> for shortcuts</p>
         </div>
       </footer>
 

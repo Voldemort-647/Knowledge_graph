@@ -221,3 +221,31 @@ export async function processNLP(prompt: string): Promise<NLPResponse> {
   }
   return res.json();
 }
+
+// POST /api/graph/import
+export interface ImportGraphData {
+  nodes: Array<{
+    label: string;
+    imageUrl?: string | null;
+    color?: string;
+    position?: { x: number; y: number };
+  }>;
+  edges: Array<{
+    source: string;
+    target: string;
+    label?: string;
+  }>;
+}
+
+export async function importGraph(data: ImportGraphData): Promise<NLPResponse> {
+  const res = await fetch('/api/graph/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Failed to import graph' }));
+    throw new Error(error.error || 'Failed to import graph');
+  }
+  return res.json();
+}

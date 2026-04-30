@@ -218,10 +218,10 @@ export async function POST(request: NextRequest) {
 
 // Generate colors for new nodes
 const NODE_COLORS = [
-  '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316',
-  '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
-  '#a855f7', '#d946ef', '#f472b6', '#fb7185', '#fdba74',
-  '#fde047', '#86efac', '#5eead4', '#67e8f9', '#93c5fd',
+  '#0d9488', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316',
+  '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#a855f7',
+  '#ef4444', '#d946ef', '#f472b6', '#84cc16', '#fdba74',
+  '#fde047', '#86efac', '#5eead4', '#67e8f9', '#fb923c',
 ];
 
 function getRandomColor(): string {

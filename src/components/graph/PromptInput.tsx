@@ -15,6 +15,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { processNLP, type NLPResponse } from '@/services/api';
 
+const MAX_CHARS = 500;
+
 interface PromptInputProps {
   onResult?: (data: NLPResponse) => void;
   isExpanded: boolean;
@@ -26,6 +28,29 @@ const EXAMPLE_PROMPTS = [
   'Python is used for AI and web development',
   'Apple created the iPhone, and Steve Jobs co-founded Apple',
 ];
+
+/* ─── Typing indicator dots animation ─── */
+function TypingIndicator() {
+  return (
+    <div className="flex items-center gap-1">
+      <motion.span
+        className="w-1.5 h-1.5 rounded-full bg-teal-500"
+        animate={{ y: [0, -4, 0] }}
+        transition={{ duration: 0.4, repeat: Infinity, ease: 'easeInOut', delay: 0 }}
+      />
+      <motion.span
+        className="w-1.5 h-1.5 rounded-full bg-teal-500"
+        animate={{ y: [0, -4, 0] }}
+        transition={{ duration: 0.4, repeat: Infinity, ease: 'easeInOut', delay: 0.15 }}
+      />
+      <motion.span
+        className="w-1.5 h-1.5 rounded-full bg-teal-500"
+        animate={{ y: [0, -4, 0] }}
+        transition={{ duration: 0.4, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }}
+      />
+    </div>
+  );
+}
 
 export default function PromptInput({
   onResult,
@@ -78,32 +103,37 @@ export default function PromptInput({
     textareaRef.current?.focus();
   };
 
+  const charCount = prompt.length;
+  const isNearLimit = charCount > MAX_CHARS * 0.8;
+
   return (
-    <div className="border-b border-gray-200 bg-white/80 backdrop-blur-sm">
+    <div className="border-b border-gray-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm">
       {/* Toggle Button */}
       <button
         onClick={onToggleExpand}
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50/80 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50/80 dark:hover:bg-neutral-800/50 transition-colors"
       >
         <div className="flex items-center gap-3">
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 shadow-sm">
             <Sparkles className="size-4 text-white" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-gray-800">AI Graph Generator</h3>
-            <p className="text-xs text-gray-500 hidden sm:block">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">AI Graph Generator</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">
               Describe relationships in natural language
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {isProcessing && (
-            <Loader2 className="size-4 text-teal-500 animate-spin" />
-          )}
+          {isProcessing ? (
+            <TypingIndicator />
+          ) : lastMessage ? (
+            <MessageSquare className="size-4 text-teal-500" />
+          ) : null}
           {isExpanded ? (
-            <ChevronUp className="size-4 text-gray-400" />
+            <ChevronUp className="size-4 text-gray-400 dark:text-gray-500" />
           ) : (
-            <ChevronDown className="size-4 text-gray-400" />
+            <ChevronDown className="size-4 text-gray-400 dark:text-gray-500" />
           )}
         </div>
       </button>
@@ -124,10 +154,14 @@ export default function PromptInput({
                 <Textarea
                   ref={textareaRef}
                   value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
+                  onChange={(e) => {
+                    if (e.target.value.length <= MAX_CHARS) {
+                      setPrompt(e.target.value);
+                    }
+                  }}
                   onKeyDown={handleKeyDown}
                   placeholder="e.g., Elon Musk founded Tesla and leads SpaceX"
-                  className="resize-none min-h-[80px] pr-12 border-gray-200 focus:border-teal-400 focus:ring-teal-400/20 text-sm"
+                  className="resize-none min-h-[80px] pr-12 border-gray-200 dark:border-neutral-700 focus:border-teal-400 dark:focus:border-teal-600 focus:ring-teal-400/20 dark:focus:ring-teal-600/20 text-sm bg-gray-50/50 dark:bg-neutral-800/50"
                   disabled={isProcessing}
                 />
                 <Button
@@ -144,6 +178,13 @@ export default function PromptInput({
                 </Button>
               </div>
 
+              {/* Character count */}
+              <div className="flex justify-end">
+                <span className={`text-[11px] transition-colors ${isNearLimit ? 'text-amber-500' : 'text-gray-400 dark:text-gray-500'}`}>
+                  {charCount}/{MAX_CHARS}
+                </span>
+              </div>
+
               {/* Example prompts */}
               <div className="flex flex-wrap gap-2">
                 {EXAMPLE_PROMPTS.map((example) => (
@@ -151,7 +192,7 @@ export default function PromptInput({
                     key={example}
                     type="button"
                     onClick={() => handleExampleClick(example)}
-                    className="text-xs px-2.5 py-1 rounded-full border border-gray-200 text-gray-500 hover:text-teal-700 hover:border-teal-200 hover:bg-teal-50 transition-colors"
+                    className="text-xs px-2.5 py-1 rounded-full border border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-gray-400 hover:text-teal-700 dark:hover:text-teal-400 hover:border-teal-200 dark:hover:border-teal-800 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors"
                   >
                     {example}
                   </button>
@@ -166,10 +207,10 @@ export default function PromptInput({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.15 }}
-                    className="flex items-start gap-2 rounded-lg bg-teal-50 border border-teal-100 px-3 py-2"
+                    className="flex items-start gap-2 rounded-lg bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800/40 px-3 py-2"
                   >
                     <MessageSquare className="size-4 text-teal-500 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-teal-800">{lastMessage}</p>
+                    <p className="text-sm text-teal-800 dark:text-teal-300">{lastMessage}</p>
                   </motion.div>
                 )}
               </AnimatePresence>
