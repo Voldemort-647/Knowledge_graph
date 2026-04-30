@@ -2,7 +2,8 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Download, FileJson, FileSpreadsheet, ChevronDown, Upload } from 'lucide-react';
+import { Download, FileJson, FileSpreadsheet, ChevronDown, Upload, ImageIcon } from 'lucide-react';
+import { exportGraphAsPNG } from '@/lib/export-image';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -209,6 +210,10 @@ export default function ExportButton({ nodes, edges, onGraphUpdated }: ExportBut
           <DropdownMenuItem onClick={exportCSV} className="gap-2 cursor-pointer" disabled={isExporting}>
             <FileSpreadsheet className="size-4 text-emerald-500" />
             Export as CSV
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={exportGraphAsPNG} className="gap-2 cursor-pointer" disabled={isExporting}>
+            <ImageIcon className="size-4 text-amber-500" />
+            Export as PNG
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleImportClick} className="gap-2 cursor-pointer" disabled={isImporting}>

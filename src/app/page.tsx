@@ -8,6 +8,7 @@ import {
   useReactFlow,
   type Connection,
   type Edge,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -29,6 +30,10 @@ import {
   ArrowRight,
   ArrowLeft,
   ArrowUp,
+  Shapes,
+  LayoutTemplate,
+  ZoomOut,
+  Map,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -68,6 +73,9 @@ import KeyboardShortcutsDialog from '@/components/graph/KeyboardShortcutsDialog'
 import NodeInspector from '@/components/graph/NodeInspector';
 import EdgeContextMenu from '@/components/graph/EdgeContextMenu';
 import PromptInput from '@/components/graph/PromptInput';
+import NodePalette from '@/components/graph/NodePalette';
+import DropZone from '@/components/graph/DropZone';
+import TemplateDialog from '@/components/graph/TemplateDialog';
 import {
   fetchGraph,
   deleteNode as apiDeleteNode,
@@ -79,6 +87,7 @@ import {
 } from '@/services/api';
 import { getLayoutedElements, type LayoutDirection } from '@/lib/layout';
 import { useGraphHistory } from '@/store/graph-history';
+import { GRAPH_TEMPLATES } from '@/lib/templates';
 
 /* ─── Toolbar button class ─── */
 const toolbarBtnBase =
@@ -114,6 +123,19 @@ function KnowledgeGraphPage() {
   const [statsPanelOpen, setStatsPanelOpen] = useState(false);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
 
+  // Feature 1: Palette state
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Feature 2: Template dialog state
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+
+  // Feature 5: Zoom level state
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [showMiniMap, setShowMiniMap] = useState(true);
+
+  // React Flow instance ref for drop zone
+  const rfInstanceRef = useRef<ReactFlowInstance | null>(null);
+
   // Edge context menu state
   const [edgeContextMenu, setEdgeContextMenu] = useState<{
     edge: Edge;
@@ -134,7 +156,7 @@ function KnowledgeGraphPage() {
   const emptyStateRef = useRef<HTMLDivElement>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
-  const { fitView, setCenter, getNodes } = useReactFlow();
+  const { fitView, setCenter, getNodes, screenToFlowPosition } = useReactFlow();
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
 
@@ -441,6 +463,69 @@ function KnowledgeGraphPage() {
     setEdgeContextMenu(null);
   }, []);
 
+  // Feature 1: Handle React Flow init
+  const handleGraphCanvasInit = useCallback((instance: ReactFlowInstance) => {
+    rfInstanceRef.current = instance;
+  }, []);
+
+  // Feature 5: Handle viewport move → update zoom
+  const handleViewportMove = useCallback((zoom: number) => {
+    setZoomLevel(zoom);
+  }, []);
+
+  // Feature 1: Handle drop from palette
+  const handleDropNode = useCallback(
+    async (data: { type: string; label: string; color: string; position: { x: number; y: number } }) => {
+      try {
+        const response = await fetch('/api/nodes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            label: data.label,
+            color: data.color,
+            posX: data.position.x,
+            posY: data.position.y,
+          }),
+        });
+        if (!response.ok) throw new Error('Failed to create node');
+        const newNode = await response.json();
+        toast.success(`Created "${data.label}" node`);
+        await loadGraph();
+      } catch {
+        toast.error('Failed to create node from palette');
+      }
+    },
+    [loadGraph]
+  );
+
+  // Feature 2: Handle quick template load from empty state
+  const handleQuickTemplateLoad = useCallback(
+    async (templateId: string) => {
+      const template = GRAPH_TEMPLATES.find((t) => t.id === templateId);
+      if (!template) return;
+      try {
+        const { importGraph } = await import('@/services/api');
+        const result = await importGraph({
+          nodes: template.nodes.map((n) => ({
+            label: n.label,
+            color: n.color,
+            position: n.position,
+          })),
+          edges: template.edges.map((e) => ({
+            source: e.source,
+            target: e.target,
+            label: e.label,
+          })),
+        });
+        toast.success(result.message || `Template "${template.name}" loaded!`);
+        await loadGraph();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to load template');
+      }
+    },
+    [loadGraph]
+  );
+
   // Empty state parallax effect
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -670,17 +755,25 @@ function KnowledgeGraphPage() {
             </div>
           </div>
         ) : (
-          <GraphCanvas
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={handleNodesChangeWrapper}
-            onEdgesChange={onEdgesChange}
-            onDeleteNode={handleDeleteNode}
-            onDeleteEdge={handleDeleteEdge}
-            onConnectNew={handleConnect}
-            onNodeDoubleClick={handleNodeDoubleClick}
-            onEdgeContextMenu={handleEdgeContextMenu}
-          />
+          <DropZone
+            onDropNode={handleDropNode}
+            screenToFlowPosition={screenToFlowPosition}
+          >
+            <GraphCanvas
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={handleNodesChangeWrapper}
+              onEdgesChange={onEdgesChange}
+              onDeleteNode={handleDeleteNode}
+              onDeleteEdge={handleDeleteEdge}
+              onConnectNew={handleConnect}
+              onNodeDoubleClick={handleNodeDoubleClick}
+              onEdgeContextMenu={handleEdgeContextMenu}
+              onInit={handleGraphCanvasInit}
+              onMove={handleViewportMove}
+              showMiniMap={showMiniMap}
+            />
+          </DropZone>
         )}
 
         {/* ─── Edge Context Menu ─── */}
@@ -693,6 +786,11 @@ function KnowledgeGraphPage() {
           onDelete={handleEdgeDelete}
           onClose={closeEdgeContextMenu}
         />
+
+        {/* ─── Node Palette (Feature 1) ─── */}
+        {!isLoading && (
+          <NodePalette isOpen={paletteOpen} onToggle={() => setPaletteOpen((p) => !p)} />
+        )}
 
         {/* ─── Search Panel ─── */}
         <AnimatePresence>
@@ -818,8 +916,42 @@ function KnowledgeGraphPage() {
                   <TooltipContent side="left">Layout Direction</TooltipContent>
                 </Tooltip>
 
+                {/* Templates (Feature 2) */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className={`${toolbarBtnBase} ${toolbarBtnInactive}`}
+                        onClick={() => setTemplateDialogOpen(true)}
+                      >
+                        <LayoutTemplate className="size-4" />
+                      </Button>
+                    </motion.div>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Templates</TooltipContent>
+                </Tooltip>
+
                 {/* Divider */}
                 <div className="h-px bg-gray-200/60 dark:bg-neutral-700/40 mx-1.5" />
+
+                {/* Palette (Feature 1) */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className={`${toolbarBtnBase} ${paletteOpen ? toolbarBtnActive : toolbarBtnInactive}`}
+                        onClick={() => setPaletteOpen((p) => !p)}
+                      >
+                        <Shapes className="size-4" />
+                      </Button>
+                    </motion.div>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Node Palette</TooltipContent>
+                </Tooltip>
 
                 {/* Search */}
                 <Tooltip>
@@ -1041,9 +1173,9 @@ function KnowledgeGraphPage() {
                 Your graph is empty
               </h2>
               <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-                Add nodes and edges using the buttons above, or try the AI generator to create a graph from natural language.
+                Add nodes by dragging from the palette, or start with a template.
               </p>
-              <div className="flex gap-2 justify-center pointer-events-auto">
+              <div className="flex gap-2 justify-center pointer-events-auto flex-wrap">
                 <Button
                   size="sm"
                   className="bg-teal-600 hover:bg-teal-700 text-white gap-2"
@@ -1060,12 +1192,40 @@ function KnowledgeGraphPage() {
                   <ZoomIn className="size-4" />
                   Try AI
                 </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-gray-200 dark:border-neutral-700/50 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-neutral-800/40 gap-2"
+                  onClick={() => setTemplateDialogOpen(true)}
+                >
+                  <LayoutTemplate className="size-4" />
+                  Load Template
+                </Button>
+              </div>
+
+              {/* Quick Start section with template thumbnails */}
+              <div className="pointer-events-auto pt-2">
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-wider font-medium">
+                  Quick Start
+                </p>
+                <div className="flex gap-2 justify-center flex-wrap">
+                  {GRAPH_TEMPLATES.map((template) => (
+                    <button
+                      key={template.id}
+                      onClick={() => handleQuickTemplateLoad(template.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/70 dark:bg-neutral-800/70 border border-gray-200/60 dark:border-neutral-700/50 shadow-sm hover:shadow-md hover:-translate-y-px transition-all duration-200 text-xs text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100"
+                    >
+                      <span className="text-sm">{template.icon}</span>
+                      <span className="font-medium">{template.name}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </motion.div>
         )}
 
-        {/* ─── Node/Edge Count Badge ─── */}
+        {/* ─── Bottom Status Bar (Feature 4 & 5) ─── */}
         {!isLoading && nodes.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -1073,16 +1233,52 @@ function KnowledgeGraphPage() {
             transition={{ delay: 0.5 }}
             className="absolute left-4 bottom-4 z-20"
           >
-            <div className="bg-white/70 dark:bg-neutral-900/70 backdrop-blur-md rounded-lg border border-gray-200/60 dark:border-neutral-700/50 shadow-md px-3 py-1.5 flex items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-teal-500" />
-                {nodes.length} {nodes.length === 1 ? 'node' : 'nodes'}
-              </span>
-              <span className="text-gray-300 dark:text-neutral-600">|</span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500" />
-                {edges.length} {edges.length === 1 ? 'edge' : 'edges'}
-              </span>
+            <div className="bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md rounded-xl border border-gray-200/60 dark:border-neutral-700/50 shadow-lg px-4 py-2 flex items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
+              {/* Node count */}
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-teal-500 shadow-sm shadow-teal-500/30" />
+                <span className="font-semibold">{nodes.length}</span>
+                <span className="text-gray-400 dark:text-gray-500">{nodes.length === 1 ? 'node' : 'nodes'}</span>
+              </div>
+
+              {/* Separator */}
+              <div className="w-px h-3.5 bg-gray-200 dark:bg-neutral-700" />
+
+              {/* Edge count */}
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-gray-400 dark:bg-gray-500" />
+                <span className="font-semibold">{edges.length}</span>
+                <span className="text-gray-400 dark:text-gray-500">{edges.length === 1 ? 'edge' : 'edges'}</span>
+              </div>
+
+              {/* Separator */}
+              <div className="w-px h-3.5 bg-gray-200 dark:bg-neutral-700" />
+
+              {/* Zoom level (Feature 5) */}
+              <div className="flex items-center gap-1.5">
+                <ZoomOut className="size-3 text-gray-400 dark:text-gray-500" />
+                <span className="font-semibold tabular-nums">{Math.round(zoomLevel * 100)}%</span>
+              </div>
+
+              {/* Separator */}
+              <div className="w-px h-3.5 bg-gray-200 dark:bg-neutral-700" />
+
+              {/* Minimap toggle */}
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => setShowMiniMap((p) => !p)}
+                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md transition-colors ${showMiniMap ? 'text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                    >
+                      <Map className="size-3" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    {showMiniMap ? 'Hide minimap' : 'Show minimap'}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
           </motion.div>
         )}
@@ -1157,6 +1353,13 @@ function KnowledgeGraphPage() {
       <KeyboardShortcutsDialog
         open={shortcutsDialogOpen}
         onOpenChange={setShortcutsDialogOpen}
+      />
+
+      {/* ─── Template Dialog (Feature 2) ─── */}
+      <TemplateDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        onGraphUpdated={loadGraph}
       />
     </div>
   );

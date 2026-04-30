@@ -8,6 +8,7 @@ import {
   MiniMap,
   Handle,
   Position,
+  useReactFlow,
   type Node,
   type NodeProps,
   type Edge,
@@ -16,6 +17,7 @@ import {
   type OnEdgesChange,
   type NodeMouseHandler,
   type EdgeMouseHandler,
+  type ReactFlowInstance,
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -51,6 +53,9 @@ interface GraphCanvasProps {
   onConnectNew?: (connection: Connection) => void;
   onNodeDoubleClick?: (nodeId: string) => void;
   onEdgeContextMenu?: (event: React.MouseEvent, edge: Edge) => void;
+  onInit?: (instance: ReactFlowInstance) => void;
+  onMove?: (zoom: number) => void;
+  showMiniMap?: boolean;
 }
 
 /* ─── Color helpers ─── */
@@ -220,8 +225,8 @@ function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) 
   return nodeContent;
 }
 
-/* ─── Main GraphCanvas ─── */
-export default function GraphCanvas({
+/* ─── Inner component that uses useReactFlow (must be inside Provider) ─── */
+function GraphCanvasInner({
   nodes,
   edges,
   onNodesChange,
@@ -231,11 +236,15 @@ export default function GraphCanvas({
   onConnectNew,
   onNodeDoubleClick,
   onEdgeContextMenu,
+  onInit,
+  onMove,
+  showMiniMap = true,
 }: GraphCanvasProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rfRef = useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
+  const { screenToFlowPosition } = useReactFlow();
 
   // Compute edge counts per node
   const edgeCountMap = useMemo(() => {
@@ -266,6 +275,32 @@ export default function GraphCanvas({
       customNode: CustomNodeComponent,
     }),
     []
+  );
+
+  // Handle init — expose React Flow instance to parent
+  const handleInit = useCallback(
+    (instance: ReactFlowInstance) => {
+      onInit?.(instance);
+    },
+    [onInit]
+  );
+
+  // Handle viewport move — report zoom level
+  const handleMove = useCallback(
+    () => {
+      if (onMove) {
+        onMove(1); // Placeholder; we use onMoveEnd for accuracy
+      }
+    },
+    [onMove]
+  );
+
+  // Handle viewport move end — report accurate zoom
+  const handleMoveEnd = useCallback(
+    (_event: unknown, viewport: { zoom: number }) => {
+      onMove?.(viewport.zoom);
+    },
+    [onMove]
   );
 
   // Save positions with debounce after drag ends
@@ -360,6 +395,9 @@ export default function GraphCanvas({
         onConnect={handleConnect}
         onNodeDoubleClick={handleNodeDoubleClick}
         onEdgeContextMenu={handleEdgeContextMenu}
+        onInit={handleInit}
+        onMove={handleMove}
+        onMoveEnd={handleMoveEnd}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.3 }}
@@ -388,19 +426,26 @@ export default function GraphCanvas({
           className={`!shadow-md ${!isDark ? '!bg-white !border-gray-200 [&>button]:!border-gray-200' : '!bg-neutral-800/90 !border-neutral-700/50 [&>button]:!border-neutral-700/50'} [&>button]:!rounded-md [&>button]:!w-8 [&>button]:!h-8`}
           showInteractive={false}
         />
-        <MiniMap
-          className={`!shadow-md ${!isDark ? '!bg-white !border-gray-200' : '!bg-neutral-800/90 !border-neutral-700/50'}`}
-          nodeColor={(node) => {
-            const data = node.data as CustomNodeData;
-            return data?.color || TEAL;
-          }}
-          maskColor={isDark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.08)'}
-          pannable
-          zoomable
-        />
+        {showMiniMap && (
+          <MiniMap
+            className={`!shadow-md ${!isDark ? '!bg-white !border-gray-200' : '!bg-neutral-800/90 !border-neutral-700/50'}`}
+            nodeColor={(node) => {
+              const data = node.data as CustomNodeData;
+              return data?.color || TEAL;
+            }}
+            maskColor={isDark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.08)'}
+            pannable
+            zoomable
+          />
+        )}
       </ReactFlow>
     </div>
   );
+}
+
+/* ─── Main GraphCanvas wrapper ─── */
+export default function GraphCanvas(props: GraphCanvasProps) {
+  return <GraphCanvasInner {...props} />;
 }
 
 /* ─── Helper to convert raw API graph data to React Flow format ─── */
