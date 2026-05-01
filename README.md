@@ -86,8 +86,8 @@ forensic/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/forensic.git
-cd forensic
+git clone https://github.com/Voldemort-647/Knowledge_graph.git
+cd Knowledge_graph
 ```
 
 ### 2. Set up environment variables
@@ -149,85 +149,6 @@ bun run start
 
 ---
 
-## 🐳 Running with Docker
-
-### Option A: Build locally with Docker Compose
-
-```bash
-# From the project root
-docker compose -f docker/docker-compose.yml up --build
-```
-
-This will:
-1. Install dependencies with Bun
-2. Build the Next.js production bundle
-3. Run the standalone Node.js server on port **3000**
-
-The app will be available at **http://localhost:3000**.
-
-To stop:
-```bash
-docker compose -f docker/docker-compose.yml down
-```
-
-### Option B: Pull from Docker Hub
-
-You can also pull and run the pre-built image directly from Docker Hub:
-
-```bash
-docker pull your-dockerhub-username/forensic-knowledge-graph:latest
-```
-
-Then run it with your environment variables:
-
-```bash
-docker run -d \
-  --name forensic-knowledge-graph \
-  -p 3000:3000 \
-  -e NEO4J_URI="neo4j+s://xxxxxxxx.databases.neo4j.io" \
-  -e NEO4J_USERNAME="neo4j" \
-  -e NEO4J_PASSWORD="your-auradb-password" \
-  -e OPENROUTER_API_KEY="sk-or-v1-your-key" \
-  your-dockerhub-username/forensic-knowledge-graph:latest
-```
-
-Or using an `.env` file:
-
-```bash
-docker run -d \
-  --name forensic-knowledge-graph \
-  -p 3000:3000 \
-  --env-file .env \
-  your-dockerhub-username/forensic-knowledge-graph:latest
-```
-
-The app will be available at **http://localhost:3000**.
-
----
-
-## 📦 Publishing to Docker Hub
-
-To build and push the image so others can run it with a single `docker run`:
-
-```bash
-# 1. Log in to Docker Hub
-docker login
-
-# 2. Build the image (from project root)
-docker build -t your-dockerhub-username/forensic-knowledge-graph:latest -f docker/Dockerfile.client .
-
-# 3. Push to Docker Hub
-docker push your-dockerhub-username/forensic-knowledge-graph:latest
-```
-
-Then share the `docker run` command from **Option B** above with your users. They only need:
-- Docker installed
-- Their own AuraDB credentials
-- An OpenRouter API key
-
-> **💡 Tip:** You can also set up automated builds by connecting your GitHub repo to Docker Hub.
-
----
 
 ## 🔌 API Reference
 
