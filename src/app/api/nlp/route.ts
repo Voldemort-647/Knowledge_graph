@@ -132,12 +132,10 @@ export async function POST(request: NextRequest) {
         temperature: 0.1,
         messages: [
           {
-            role: 'system',
-            content: SYSTEM_PROMPT,
-          },
-          {
             role: 'user',
             content: [
+              SYSTEM_PROMPT,
+              '',
               '=== CURRENT GRAPH STATE (READ THIS CAREFULLY) ===',
               graphContext,
               '',
@@ -150,6 +148,7 @@ export async function POST(request: NextRequest) {
               'Step 3: For each entity that does NOT exist, use CREATE with a new randomUUID() id and a position offset from occupied areas.',
               'Step 4: Create the requested RELATES_TO relationships between matched/created nodes.',
               'IMPORTANT: Creating a duplicate node for an existing entity is an ERROR. Always reuse existing nodes by their id.',
+              'Return ONLY a JSON object: {"cypher": "..."} — no explanations, no markdown fences.',
             ].join('\n'),
           },
         ],
@@ -157,19 +156,21 @@ export async function POST(request: NextRequest) {
     });
 
     const payload = (await completion.json()) as {
-      error?: { message?: string };
+      error?: { message?: string; code?: number; metadata?: unknown };
       choices?: Array<{ message?: { content?: string } }>;
     };
 
     if (!completion.ok) {
+      console.error('OpenRouter error response:', JSON.stringify(payload, null, 2));
       return NextResponse.json(
-        { error: payload.error?.message || 'OpenRouter request failed' },
+        { error: payload.error?.message || `OpenRouter request failed (${completion.status})` },
         { status: completion.status }
       );
     }
 
     const content = payload.choices?.[0]?.message?.content;
     if (!content) {
+      console.error('OpenRouter empty response:', JSON.stringify(payload, null, 2));
       return NextResponse.json({ error: 'Model did not return content' }, { status: 500 });
     }
 
