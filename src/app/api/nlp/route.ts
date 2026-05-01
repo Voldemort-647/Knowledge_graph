@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { runNlpCypher, fetchStoredGraph } from '@/lib/graph-store';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL = 'openai/gpt-4o-mini';
+const OPENROUTER_MODEL = 'google/gemma-4-26b-a4b-it:free';
 
 function extractCypher(content: string): string {
   const fencedMatch = content.match(/```(?:cypher)?\s*([\s\S]*?)```/i);
@@ -20,54 +20,91 @@ function extractCypher(content: string): string {
 }
 
 /**
- * Build a compact text summary of the current graph for AI context.
- * Keeps token count low while giving the model full awareness of
- * existing entities, their positions, and connections.
+ * Build a detailed context of the current graph for the AI model.
+ * Provides exact node IDs, labels, positions, and relationships so
+ * the model can MATCH existing nodes by id instead of creating duplicates.
  */
 async function buildGraphContext(): Promise<string> {
   try {
     const { nodes, edges } = await fetchStoredGraph();
 
     if (nodes.length === 0) {
-      return 'The graph is currently empty. No existing nodes or edges.';
+      return 'GRAPH STATE: The graph is currently EMPTY. There are zero nodes and zero edges. You may freely CREATE all new nodes.';
     }
 
-    // Build node summary: label, id, and position
+    const nodeMap = new Map(nodes.map((n) => [n.id, n.label]));
+
+    // List every node with its exact id so the model can MATCH by id
     const nodeLines = nodes.map(
-      (n) => `  - "${n.label}" (id: ${n.id}, pos: ${n.posX},${n.posY}, color: ${n.color})`
+      (n) => `  NODE id="${n.id}" label="${n.label}" pos=(${n.posX},${n.posY}) color="${n.color}"`
     );
 
-    // Build edge summary: source label → target label with relationship
-    const nodeMap = new Map(nodes.map((n) => [n.id, n.label]));
+    // List every edge with source/target labels and ids
     const edgeLines = edges.map((e) => {
-      const srcLabel = nodeMap.get(e.sourceNodeId) || e.sourceNodeId;
-      const tgtLabel = nodeMap.get(e.targetNodeId) || e.targetNodeId;
-      return `  - "${srcLabel}" --[${e.relationship}]--> "${tgtLabel}"`;
+      const srcLabel = nodeMap.get(e.sourceNodeId) || '?';
+      const tgtLabel = nodeMap.get(e.targetNodeId) || '?';
+      return `  EDGE "${srcLabel}"(${e.sourceNodeId}) --[${e.relationship}]--> "${tgtLabel}"(${e.targetNodeId})`;
     });
 
-    // Compute occupied position bounds so AI can place new nodes in free space
+    // Provide occupied positions so new nodes avoid overlap
     const xs = nodes.map((n) => n.posX);
     const ys = nodes.map((n) => n.posY);
-    const bounds = `Occupied area: X [${Math.min(...xs)}..${Math.max(...xs)}], Y [${Math.min(...ys)}..${Math.max(...ys)}]`;
+    const maxX = Math.max(...xs);
+    const maxY = Math.max(...ys);
+
+    // Build a lookup table the model can reference
+    const labelList = nodes.map((n) => `"${n.label}"`).join(', ');
 
     const parts = [
-      `Current graph has ${nodes.length} node(s) and ${edges.length} edge(s).`,
-      bounds,
+      `GRAPH STATE: ${nodes.length} node(s), ${edges.length} edge(s).`,
+      `ALL EXISTING LABELS: [${labelList}]`,
+      `Occupied area: X=[${Math.min(...xs)}..${maxX}], Y=[${Math.min(...ys)}..${maxY}]`,
+      `Suggested position for new nodes: start at posX=${maxX + 250}, posY=${maxY + 250} and offset each new node by 200.`,
       '',
-      'Existing nodes:',
+      'ALL EXISTING NODES (use MATCH by id for these):',
       ...nodeLines,
     ];
 
     if (edgeLines.length > 0) {
-      parts.push('', 'Existing edges:', ...edgeLines);
+      parts.push('', 'ALL EXISTING EDGES:', ...edgeLines);
     }
 
     return parts.join('\n');
   } catch (error) {
     console.error('Failed to fetch graph context:', error);
-    return 'Could not retrieve current graph state. Treat as if graph may have existing data.';
+    return 'GRAPH STATE: Could not retrieve. Assume the graph may already contain nodes. Use MERGE on label to avoid duplicates.';
   }
 }
+
+const SYSTEM_PROMPT = `You are a Neo4j Cypher generator. You MUST follow these rules strictly:
+
+SCHEMA RULES:
+- All nodes use label :GraphNode
+- All relationships use type :RELATES_TO
+- New nodes MUST set: id (use randomUUID()), label, color, posX, posY, createdAt (use datetime()), updatedAt (use datetime()), and optionally emoji and imageUrl
+
+RELATIONSHIP SYNTAX — CRITICAL:
+- ALWAYS use CREATE for relationships, NEVER use MERGE for relationships
+- Relationships MUST use this exact syntax pattern:
+  CREATE (a)-[r:RELATES_TO]->(b) SET r.id = randomUUID(), r.sourceNodeId = a.id, r.targetNodeId = b.id, r.relationship = "label here", r.edgeType = "smoothstep", r.animated = true, r.lineStyle = "dashed", r.thickness = 2, r.createdAt = datetime()
+- NEVER put properties inside the relationship brackets like [:RELATES_TO {id: ...}] — this causes syntax errors
+- ALWAYS set relationship properties using SET after the CREATE pattern
+
+EXISTING NODE RULES:
+You will receive the COMPLETE current graph state listing every existing node with its exact id and label, and every existing edge.
+
+BEFORE generating any Cypher, you MUST:
+1. READ the entire list of existing nodes and their labels
+2. For EVERY entity the user mentions, CHECK if a node with that label (or a semantically equivalent label) ALREADY EXISTS in the graph state
+3. If an existing node matches → use MATCH (n:GraphNode {id: "<exact-id-from-graph-state>"}) to reference it. NEVER create a new node for an entity that already exists.
+4. ONLY use CREATE for entities that have NO matching node in the graph state
+5. For new nodes, place them at positions that do NOT overlap with existing nodes (offset by at least 200px from all occupied positions)
+
+NODE MERGE RULE: If you are unsure whether a node exists, use MERGE on the label property: MERGE (n:GraphNode {label: "<label>"}) ON CREATE SET n.id = randomUUID(), ...
+
+FORBIDDEN OPERATIONS: DELETE, DETACH DELETE, DROP, REMOVE, CALL, APOC, LOAD CSV — never use these.
+
+OUTPUT: Return ONLY a JSON object with a single key "cypher" containing the Cypher query string. No explanations, no markdown.`;
 
 export async function POST(request: NextRequest) {
   try {
@@ -92,17 +129,29 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model: OPENROUTER_MODEL,
-        temperature: 0.2,
+        temperature: 0.1,
         response_format: { type: 'json_object' },
         messages: [
           {
             role: 'system',
-            content:
-              'You convert natural language graph descriptions into safe Neo4j Cypher for this schema only. Nodes must be labeled GraphNode. Relationships must use RELATES_TO. Every new node must set id, label, color, posX, posY, createdAt, updatedAt, and optional emoji/imageUrl. Every relationship must set id, sourceNodeId, targetNodeId, relationship, edgeType, animated (must be true), lineStyle, thickness, createdAt. Keep graphs readable: space nodes generously on a grid, avoid overlapping positions, and prefer left-to-right or top-to-bottom flows that minimize edge crossings. Never emit DELETE, DROP, REMOVE, APOC, CALL, or LOAD CSV. Return only JSON with a single "cypher" string.\n\nIMPORTANT: You will be given the current state of the graph. Use MERGE on the label property to reuse existing nodes instead of creating duplicates. When adding new nodes, place them in positions that do not overlap with existing nodes (offset by at least 200px). When the user refers to an existing entity, always connect to the existing node rather than creating a new one.',
+            content: SYSTEM_PROMPT,
           },
           {
             role: 'user',
-            content: `## Current Graph State\n${graphContext}\n\n## User Request\n${prompt.trim()}\n\nUse MERGE on label to connect to existing nodes. When you need new ids, use randomUUID(). Use ISO timestamps via datetime(). Place new nodes away from occupied positions. Do not include explanations.`,
+            content: [
+              '=== CURRENT GRAPH STATE (READ THIS CAREFULLY) ===',
+              graphContext,
+              '',
+              '=== USER REQUEST ===',
+              prompt.trim(),
+              '',
+              '=== INSTRUCTIONS ===',
+              'Step 1: Check every entity in the user request against ALL EXISTING NODES listed above.',
+              'Step 2: For each entity that ALREADY EXISTS, use MATCH (n:GraphNode {id: "<exact-id>"}) — do NOT create a duplicate.',
+              'Step 3: For each entity that does NOT exist, use CREATE with a new randomUUID() id and a position offset from occupied areas.',
+              'Step 4: Create the requested RELATES_TO relationships between matched/created nodes.',
+              'IMPORTANT: Creating a duplicate node for an existing entity is an ERROR. Always reuse existing nodes by their id.',
+            ].join('\n'),
           },
         ],
       }),
