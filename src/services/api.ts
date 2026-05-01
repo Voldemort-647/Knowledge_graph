@@ -1,5 +1,3 @@
-// API service layer for Knowledge Graph Builder
-
 export interface GraphNode {
   id: string;
   type: string;
@@ -32,6 +30,18 @@ export interface GraphEdge {
 export interface GraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
+}
+
+export interface RawNode {
+  id: string;
+  label: string;
+  imageUrl: string | null;
+  emoji: string | null;
+  color: string;
+  posX: number;
+  posY: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CreateNodeData {
@@ -76,25 +86,6 @@ export interface NodePosition {
   posY: number;
 }
 
-export interface NLPResponse {
-  success: boolean;
-  message: string;
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
-
-export interface RawNode {
-  id: string;
-  label: string;
-  imageUrl: string | null;
-  emoji: string | null;
-  color: string;
-  posX: number;
-  posY: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface GraphStats {
   totalNodes: number;
   totalEdges: number;
@@ -108,141 +99,20 @@ export interface GraphStats {
   }>;
 }
 
-// GET /api/graph
-export async function fetchGraph(): Promise<GraphData> {
-  const res = await fetch('/api/graph');
-  if (!res.ok) throw new Error('Failed to fetch graph');
-  return res.json();
+export interface NLPResponse {
+  success: boolean;
+  message: string;
+  cypher?: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 }
 
-// DELETE /api/graph/clear
-export async function clearGraph(): Promise<{ success: boolean; message: string }> {
-  const res = await fetch('/api/graph/clear', { method: 'DELETE' });
-  if (!res.ok) throw new Error('Failed to clear graph');
-  return res.json();
-}
-
-// GET /api/stats
-export async function fetchStats(): Promise<GraphStats> {
-  const res = await fetch('/api/stats');
-  if (!res.ok) throw new Error('Failed to fetch statistics');
-  return res.json();
-}
-
-// GET /api/nodes
-export async function fetchNodes(): Promise<RawNode[]> {
-  const res = await fetch('/api/nodes');
-  if (!res.ok) throw new Error('Failed to fetch nodes');
-  return res.json();
-}
-
-// POST /api/nodes
-export async function createNode(data: CreateNodeData): Promise<RawNode> {
-  const res = await fetch('/api/nodes', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Failed to create node' }));
-    throw new Error(error.error || 'Failed to create node');
-  }
-  return res.json();
-}
-
-// PATCH /api/nodes/update
-export async function updateNode(data: UpdateNodeData): Promise<RawNode> {
-  const res = await fetch('/api/nodes/update', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Failed to update node' }));
-    throw new Error(error.error || 'Failed to update node');
-  }
-  return res.json();
-}
-
-// DELETE /api/nodes?id=xxx
-export async function deleteNode(id: string): Promise<{ success: boolean }> {
-  const res = await fetch(`/api/nodes?id=${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  });
-  if (!res.ok) throw new Error('Failed to delete node');
-  return res.json();
-}
-
-// PATCH /api/nodes/position
-export async function updateNodePositions(
-  positions: NodePosition[]
-): Promise<{ success: boolean }> {
-  const res = await fetch('/api/nodes/position', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ positions }),
-  });
-  if (!res.ok) throw new Error('Failed to update positions');
-  return res.json();
-}
-
-// POST /api/edges
-export async function createEdge(data: CreateEdgeData): Promise<unknown> {
-  const res = await fetch('/api/edges', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Failed to create edge' }));
-    throw new Error(error.error || 'Failed to create edge');
-  }
-  return res.json();
-}
-
-// PATCH /api/edges/update
-export async function updateEdge(data: UpdateEdgeData): Promise<unknown> {
-  const res = await fetch('/api/edges/update', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Failed to update edge' }));
-    throw new Error(error.error || 'Failed to update edge');
-  }
-  return res.json();
-}
-
-// DELETE /api/edges?id=xxx
-export async function deleteEdge(id: string): Promise<{ success: boolean }> {
-  const res = await fetch(`/api/edges?id=${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  });
-  if (!res.ok) throw new Error('Failed to delete edge');
-  return res.json();
-}
-
-// POST /api/nlp
-export async function processNLP(prompt: string): Promise<NLPResponse> {
-  const res = await fetch('/api/nlp', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt }),
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Failed to process' }));
-    throw new Error(error.error || 'Failed to process');
-  }
-  return res.json();
-}
-
-// POST /api/graph/import
 export interface ImportGraphData {
   nodes: Array<{
     label: string;
     imageUrl?: string | null;
-    color?: string;
+    emoji?: string | null;
+    color?: string | null;
     position?: { x: number; y: number };
   }>;
   edges: Array<{
@@ -252,15 +122,91 @@ export interface ImportGraphData {
   }>;
 }
 
-export async function importGraph(data: ImportGraphData): Promise<NLPResponse> {
-  const res = await fetch('/api/graph/import', {
+async function getJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const res = await fetch(input, init);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || 'Request failed');
+  }
+  return res.json();
+}
+
+export function fetchGraph(): Promise<GraphData> {
+  return getJson('/api/graph');
+}
+
+export function fetchStats(): Promise<GraphStats> {
+  return getJson('/api/stats');
+}
+
+export function fetchNodes(): Promise<RawNode[]> {
+  return getJson('/api/nodes');
+}
+
+export function createNode(data: CreateNodeData): Promise<RawNode> {
+  return getJson('/api/nodes', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Failed to import graph' }));
-    throw new Error(error.error || 'Failed to import graph');
-  }
-  return res.json();
+}
+
+export function updateNode(data: UpdateNodeData): Promise<RawNode> {
+  return getJson('/api/nodes/update', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteNode(id: string): Promise<{ success: boolean }> {
+  return getJson(`/api/nodes?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export function updateNodePositions(positions: NodePosition[]): Promise<{ success: boolean }> {
+  return getJson('/api/nodes/position', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ positions }),
+  });
+}
+
+export function createEdge(data: CreateEdgeData): Promise<unknown> {
+  return getJson('/api/edges', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateEdge(data: UpdateEdgeData): Promise<unknown> {
+  return getJson('/api/edges/update', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteEdge(id: string): Promise<{ success: boolean }> {
+  return getJson(`/api/edges?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export function clearGraph(): Promise<{ success: boolean; message: string }> {
+  return getJson('/api/graph/clear', { method: 'DELETE' });
+}
+
+export function importGraph(data: ImportGraphData): Promise<NLPResponse> {
+  return getJson('/api/graph/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export function processNLP(prompt: string): Promise<NLPResponse> {
+  return getJson('/api/nlp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt }),
+  });
 }

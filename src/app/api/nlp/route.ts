@@ -1,235 +1,82 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import ZAI from 'z-ai-web-dev-sdk';
+import { runNlpCypher } from '@/lib/graph-store';
 
-const NLP_SYSTEM_PROMPT = `You are a knowledge graph extraction engine. Given a natural language description of relationships, extract entities and relationships into a structured JSON format.
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_MODEL = 'openai/gpt-4o-mini';
 
-Examples:
+function extractCypher(content: string): string {
+  const fencedMatch = content.match(/```(?:cypher)?\s*([\s\S]*?)```/i);
+  const raw = fencedMatch ? fencedMatch[1] : content;
+  const trimmed = raw.trim();
 
-Input: "Elon Musk founded Tesla and leads SpaceX"
-Output: {"nodes":[{"label":"Elon Musk","imageUrl":null},{"label":"Tesla","imageUrl":null},{"label":"SpaceX","imageUrl":null}],"edges":[{"source":"Elon Musk","target":"Tesla","relationship":"founded"},{"source":"Elon Musk","target":"SpaceX","relationship":"leads"}]}
+  try {
+    const parsed = JSON.parse(trimmed) as { cypher?: string };
+    if (parsed.cypher) return parsed.cypher.trim();
+  } catch {
+    // fall through
+  }
 
-Input: "Python is used for AI and web development"
-Output: {"nodes":[{"label":"Python","imageUrl":null},{"label":"AI","imageUrl":null},{"label":"web development","imageUrl":null}],"edges":[{"source":"Python","target":"AI","relationship":"used_for"},{"source":"Python","target":"web development","relationship":"used_for"}]}
-
-Rules:
-- Extract ALL entities mentioned as nodes (people, organizations, concepts, technologies)
-- Extract ALL relationships as directed edges
-- Use the EXACT entity names as written (case-sensitive matching for deduplication)
-- Keep relationship labels short and descriptive (1-3 words, use underscores for multi-word: e.g., "works_at")
-- Use null for imageUrl if no image is mentioned
-- If the input is ambiguous, make reasonable assumptions based on common knowledge
-- For bi-directional relationships, create two separate edges
-- Return ONLY valid JSON, no markdown, no code blocks, no explanation`;
+  return trimmed;
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { prompt } = body;
-
+    const { prompt } = await request.json();
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
-      return NextResponse.json(
-        { error: 'Prompt is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
     }
 
-    // Call LLM to extract graph from natural language
-    const zai = await ZAI.create();
-
-    const completion = await zai.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: NLP_SYSTEM_PROMPT,
-        },
-        {
-          role: 'user',
-          content: `Extract the knowledge graph from: "${prompt.trim()}"`,
-        },
-      ],
-      thinking: { type: 'disabled' },
-    });
-
-    const rawResponse = completion.choices[0]?.message?.content;
-
-    if (!rawResponse) {
-      return NextResponse.json(
-        { error: 'No response from AI' },
-        { status: 500 }
-      );
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ error: 'OPENROUTER_API_KEY is not configured' }, { status: 500 });
     }
 
-    // Parse JSON response safely
-    let graphData;
-    try {
-      // Try to extract JSON from the response (handle markdown code blocks)
-      let jsonStr = rawResponse.trim();
-      const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (jsonMatch) {
-        jsonStr = jsonMatch[1].trim();
-      }
-      graphData = JSON.parse(jsonStr);
-    } catch (parseError) {
-      console.error('JSON parse error:', parseError, 'Raw response:', rawResponse);
-      return NextResponse.json(
-        { error: 'Failed to parse AI response as JSON', raw: rawResponse },
-        { status: 422 }
-      );
-    }
-
-    // Validate structure
-    if (!graphData.nodes || !Array.isArray(graphData.nodes)) {
-      return NextResponse.json(
-        { error: 'Invalid graph data: missing nodes array' },
-        { status: 422 }
-      );
-    }
-
-    if (!graphData.edges || !Array.isArray(graphData.edges)) {
-      return NextResponse.json(
-        { error: 'Invalid graph data: missing edges array' },
-        { status: 422 }
-      );
-    }
-
-    // Create nodes in database (use MERGE-like logic via upsert)
-    const nodeMap = new Map<string, string>(); // label -> id
-
-    for (const nodeData of graphData.nodes) {
-      if (!nodeData.label || typeof nodeData.label !== 'string') continue;
-
-      // Check if node with this label already exists
-      const existing = await db.graphNode.findFirst({
-        where: { label: nodeData.label.trim() },
-      });
-
-      if (existing) {
-        nodeMap.set(nodeData.label.trim(), existing.id);
-      } else {
-        // Spread new nodes around the center
-        const angle = (nodeMap.size / Math.max(graphData.nodes.length, 1)) * Math.PI * 2;
-        const radius = 200 + Math.random() * 150;
-
-        const newNode = await db.graphNode.create({
-          data: {
-            label: nodeData.label.trim(),
-            imageUrl: nodeData.imageUrl || null,
-            color: getRandomColor(),
-            posX: Math.cos(angle) * radius + 400,
-            posY: Math.sin(angle) * radius + 300,
-          },
-        });
-        nodeMap.set(nodeData.label.trim(), newNode.id);
-      }
-    }
-
-    // Create edges
-    const createdEdges = [];
-    for (const edgeData of graphData.edges) {
-      const sourceId = nodeMap.get(edgeData.source?.trim());
-      const targetId = nodeMap.get(edgeData.target?.trim());
-
-      if (!sourceId || !targetId) continue;
-      if (sourceId === targetId) continue; // Skip self-loops
-
-      const sanitizedRel = (edgeData.relationship || 'related_to')
-        .trim()
-        .replace(/[^a-zA-Z0-9_\- ]/g, '')
-        .substring(0, 50);
-
-      if (!sanitizedRel) continue;
-
-      // Check for duplicate
-      const existingEdge = await db.graphEdge.findFirst({
-        where: {
-          sourceNodeId: sourceId,
-          targetNodeId: targetId,
-          relationship: sanitizedRel,
-        },
-      });
-
-      if (!existingEdge) {
-        const edge = await db.graphEdge.create({
-          data: {
-            relationship: sanitizedRel,
-            sourceNodeId: sourceId,
-            targetNodeId: targetId,
-          },
-        });
-        createdEdges.push(edge);
-      }
-    }
-
-    // Return the complete updated graph
-    const allNodes = await db.graphNode.findMany({
-      orderBy: { createdAt: 'asc' },
-    });
-
-    const allEdges = await db.graphEdge.findMany({
-      include: {
-        sourceNode: true,
-        targetNode: true,
+    const completion = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
       },
-      orderBy: { createdAt: 'asc' },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You convert natural language graph descriptions into safe Neo4j Cypher for this schema only. Nodes must be labeled GraphNode. Relationships must use RELATES_TO. Every new node must set id, label, color, posX, posY, createdAt, updatedAt, and optional emoji/imageUrl. Every relationship must set id, sourceNodeId, targetNodeId, relationship, edgeType, animated (must be true), lineStyle, thickness, createdAt. Keep graphs readable: space nodes generously on a grid, avoid overlapping positions, and prefer left-to-right or top-to-bottom flows that minimize edge crossings. Never emit DELETE, DROP, REMOVE, APOC, CALL, or LOAD CSV. Return only JSON with a single "cypher" string.',
+          },
+          {
+            role: 'user',
+            content: `Create or extend the current graph from this request:\n${prompt.trim()}\n\nUse MERGE where appropriate. When you need ids, use randomUUID(). Use ISO timestamps via datetime(). Do not include explanations.`,
+          },
+        ],
+      }),
     });
 
-    const reactFlowNodes = allNodes.map((node) => ({
-      id: node.id,
-      type: 'customNode',
-      position: { x: node.posX, y: node.posY },
-      data: {
-        label: node.label,
-        imageUrl: node.imageUrl,
-        color: node.color,
-      },
-    }));
+    const payload = (await completion.json()) as {
+      error?: { message?: string };
+      choices?: Array<{ message?: { content?: string } }>;
+    };
 
-    const reactFlowEdges = allEdges.map((edge) => {
-      const lineStyle = edge.lineStyle || 'solid';
-      const thickness = edge.thickness || 2;
-      const dashArray = lineStyle === 'dashed' ? '8 4' : lineStyle === 'dotted' ? '2 4' : undefined;
-      return {
-        id: edge.id,
-        source: edge.sourceNodeId,
-        target: edge.targetNodeId,
-        label: edge.relationship,
-        type: edge.edgeType || 'smoothstep',
-        animated: edge.animated !== false,
-        style: { stroke: '#0d9488', strokeWidth: thickness, ...(dashArray ? { strokeDasharray: dashArray } : {}) },
-        labelStyle: { fill: '#0d9488', fontSize: 12, fontWeight: 600 },
-        labelBgStyle: { fill: '#ffffff', fillOpacity: 0.9 },
-        labelBgPadding: [8, 4] as [number, number],
-        labelBgBorderRadius: 4,
-        edgeType: edge.edgeType || 'smoothstep',
-        lineStyle,
-        thickness,
-      };
-    });
+    if (!completion.ok) {
+      return NextResponse.json(
+        { error: payload.error?.message || 'OpenRouter request failed' },
+        { status: completion.status }
+      );
+    }
 
-    return NextResponse.json({
-      success: true,
-      message: `Created ${graphData.nodes.length} nodes and ${createdEdges.length} edges`,
-      nodes: reactFlowNodes,
-      edges: reactFlowEdges,
-    });
+    const content = payload.choices?.[0]?.message?.content;
+    if (!content) {
+      return NextResponse.json({ error: 'Model did not return content' }, { status: 500 });
+    }
+
+    const cypher = extractCypher(content);
+    return NextResponse.json(await runNlpCypher(cypher));
   } catch (error) {
-    console.error('NLP processing error:', error);
-    return NextResponse.json(
-      { error: 'Failed to process natural language input' },
-      { status: 500 }
-    );
+    console.error('Error generating Cypher:', error);
+    const message = error instanceof Error ? error.message : 'Failed to generate Cypher';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-}
-
-// Generate colors for new nodes
-const NODE_COLORS = [
-  '#0d9488', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316',
-  '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#a855f7',
-  '#ef4444', '#d946ef', '#f472b6', '#84cc16', '#fdba74',
-  '#fde047', '#86efac', '#5eead4', '#67e8f9', '#fb923c',
-];
-
-function getRandomColor(): string {
-  return NODE_COLORS[Math.floor(Math.random() * NODE_COLORS.length)];
 }

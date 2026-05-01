@@ -1,39 +1,14 @@
-version: '3.8'
-
 services:
-  # Main Next.js application (includes API routes)
   app:
     build:
       context: ..
       dockerfile: docker/Dockerfile.client
-    container_name: knowledge-graph-app
+    container_name: auradb-knowledge-graph
     ports:
       - "3000:3000"
+    env_file:
+      - ../.env
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=file:/app/data/graph.db
-    volumes:
-      - graph-data:/app/data
+      NODE_ENV: production
+      PORT: 3000
     restart: unless-stopped
-
-  # Neo4j (optional - for production graph storage)
-  neo4j:
-    image: neo4j:5-community
-    container_name: knowledge-graph-neo4j
-    ports:
-      - "7474:7474"  # HTTP
-      - "7687:7687"  # Bolt
-    environment:
-      - NEO4J_AUTH=neo4j/password123
-      - NEO4J_PLUGINS=["apoc"]
-    volumes:
-      - neo4j-data:/data
-      - neo4j-logs:/logs
-    restart: unless-stopped
-    profiles:
-      - with-neo4j
-
-volumes:
-  graph-data:
-  neo4j-data:
-  neo4j-logs:

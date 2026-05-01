@@ -36,7 +36,16 @@ export default function ShareButton({ nodes, edges, onGraphUpdated }: ShareButto
   const [dialogOpen, setDialogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const shareUrl = nodes.length > 0 ? generateShareUrl(nodes, edges) : '';
+  const shareUrl = nodes.length > 0
+    ? generateShareUrl(
+        nodes as Array<{
+          id: string;
+          data: { label: string; color?: string; imageUrl?: string | null };
+          position: { x: number; y: number };
+        }>,
+        edges as Array<{ id: string; source: string; target: string; label?: string }>
+      )
+    : '';
 
   const handleCopyLink = useCallback(async () => {
     if (!shareUrl) return;

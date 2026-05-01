@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   keywords: ["Knowledge Graph", "React Flow", "AI", "NLP", "Visualization"],
   authors: [{ name: "Z.ai Team" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/logo.svg",
   },
   openGraph: {
     title: "Knowledge Graph Builder",

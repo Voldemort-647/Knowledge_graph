@@ -93,11 +93,12 @@ export default function ExportButton({ nodes, edges, onGraphUpdated }: ExportBut
       const edgesHeader = 'id,source,target,relationship\n';
       const edgesRows = edges
         .map((e) => {
+          const label = typeof e.label === 'string' ? e.label : String(e.label ?? '');
           return [
             e.id,
             e.source,
             e.target,
-            `"${(e.label || '').replace(/"/g, '""')}"`,
+            `"${label.replace(/"/g, '""')}"`,
           ].join(',');
         })
         .join('\n');

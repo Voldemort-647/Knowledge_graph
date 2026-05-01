@@ -1,39 +1,31 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
-  ReactFlow,
   Background,
-  Controls,
-  MiniMap,
-  Handle,
-  Position,
-  useReactFlow,
-  type Node,
-  type NodeProps,
-  type Edge,
-  type Connection,
-  type OnNodesChange,
-  type OnEdgesChange,
-  type NodeMouseHandler,
-  type EdgeMouseHandler,
-  type ReactFlowInstance,
   BackgroundVariant,
+  Controls,
+  Handle,
+  MiniMap,
+  Position,
+  ReactFlow,
+  type Connection,
+  type Edge,
+  type Node,
+  type NodeMouseHandler,
+  type NodeProps,
+  type OnEdgesChange,
+  type OnNodesChange,
   type OnSelectionChangeFunc,
+  type ReactFlowInstance,
+  BaseEdge,
+  EdgeLabelRenderer,
+  type EdgeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Pencil } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { useTheme } from 'next-themes';
 import type { GraphData } from '@/services/api';
 import { updateNodePositions } from '@/services/api';
 
-/* ─── Types ─── */
 export interface CustomNodeData {
   label: string;
   imageUrl?: string | null;
@@ -44,493 +36,298 @@ export interface CustomNodeData {
 }
 
 export type CustomNodeType = Node<CustomNodeData, 'customNode'>;
+export type NodeShape = 'rectangle' | 'circle';
+export type GraphSurfaceTheme = 'light' | 'dark';
 
 interface GraphCanvasProps {
   nodes: CustomNodeType[];
   edges: Edge[];
-  onNodesChange: OnNodesChange;
-  onEdgesChange: OnEdgesChange;
-  onDeleteNode?: (id: string) => void;
-  onDeleteEdge?: (id: string) => void;
+  onNodesChange: OnNodesChange<CustomNodeType>;
+  onEdgesChange: OnEdgesChange<Edge>;
   onConnectNew?: (connection: Connection) => void;
-  onNodeDoubleClick?: (nodeId: string) => void;
-  onEdgeContextMenu?: (event: React.MouseEvent, edge: Edge) => void;
-  onNodeContextMenu?: (event: React.MouseEvent, node: Node) => void;
-  onInit?: (instance: ReactFlowInstance) => void;
-  onMove?: (zoom: number) => void;
+  onInit?: (instance: ReactFlowInstance<CustomNodeType, Edge>) => void;
   onSelectionChange?: OnSelectionChangeFunc;
-  showMiniMap?: boolean;
+  nodeShape?: NodeShape;
+  surfaceTheme?: GraphSurfaceTheme;
 }
 
-/* ─── Color helpers ─── */
 const TEAL = '#0d9488';
+const EDGE_DASH = '8 4';
 
-/* ─── Custom Node Component ─── */
-function CustomNodeComponent({ data, id, selected }: NodeProps<CustomNodeType>) {
-  const nodeColor = data.color || TEAL;
-  const hasImage = data.imageUrl && data.imageUrl.trim().length > 0;
-  const hasEmoji = data.emoji && data.emoji.trim().length > 0;
-  const edgeCount = data.edgeCount ?? 0;
-  const isLongLabel = data.label.length > 20;
-
-  // Convert hex to rgba with opacity
-  const hexToRgba = (hex: string, alpha: number): string => {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  };
-
-  const nodeContent = (
-    <div className="group relative kg-node-enter">
-      {/* Task 5: Dramatic glow effect behind node with color-matched glow ring */}
-      <div
-        className="absolute -inset-3 rounded-2xl opacity-0 group-hover:opacity-100 transition-all duration-500 pointer-events-none"
-        style={{
-          boxShadow: `0 0 40px 10px ${hexToRgba(nodeColor, 0.22)}, 0 0 16px 4px ${hexToRgba(nodeColor, 0.1)}, inset 0 0 0 2px ${hexToRgba(nodeColor, 0.08)}`,
-        }}
+function BasicNode({
+  data,
+  selected,
+}: NodeProps<Node<CustomNodeData & { shape?: NodeShape }, 'customNode'>>) {
+  const color = data.color || TEAL;
+  const shape = data.shape || 'rectangle';
+  const isCircle = shape === 'circle';
+  return (
+    <div className={`relative ${isCircle ? 'w-[150px]' : 'min-w-[180px]'}`}>
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!h-3 !w-3 !border-2 !bg-white"
+        style={{ borderColor: color }}
       />
-
       <div
-        className={`
-          kg-node-card relative flex items-center gap-3 rounded-xl px-4 py-3 shadow-md
-          transition-all duration-300 cursor-grab active:cursor-grabbing
-          hover:shadow-xl hover:shadow-lg
-          bg-white dark:bg-neutral-800/90 dark:border-neutral-700/50
-          ${selected
-            ? 'ring-[3px] ring-offset-2 ring-offset-white dark:ring-offset-neutral-900 shadow-xl node-selected-shimmer'
-            : ''
-          }
-        `}
+        className={`${isCircle ? 'flex h-[150px] w-[150px] flex-col items-center justify-center rounded-full px-5 py-5 text-center' : 'rounded-xl px-4 py-3'} bg-white shadow-lg dark:bg-neutral-900 ${
+          selected ? 'ring-2 ring-teal-500 ring-offset-2 dark:ring-offset-neutral-950' : ''
+        }`}
         style={{
-          borderLeft: `4px solid ${nodeColor}`,
-          borderRadius: '12px',
-          // Subtle gradient background with inner shadow
-          background: `linear-gradient(135deg, rgba(255,255,255,0.97) 0%, rgba(249,250,251,0.93) 100%)`,
-          boxShadow: `inset 0 1px 2px rgba(0,0,0,0.04)${selected ? `, 0 0 0 3px ${hexToRgba(nodeColor, 0.5)}, 0 0 28px 8px ${hexToRgba(nodeColor, 0.15)}` : ''}`,
-          // @ts-expect-error CSS custom property for ring color
-          '--tw-ring-color': selected ? nodeColor : undefined,
-        }}
-        onDoubleClick={(e) => {
-          e.stopPropagation();
-          window.dispatchEvent(new CustomEvent('node-edit-click', { detail: { nodeId: id } }));
+          border: `4px solid ${color}`,
+          boxShadow: selected
+            ? `0 0 0 2px rgba(20, 184, 166, 0.25), 0 12px 26px rgba(15, 23, 42, 0.18)`
+            : `0 10px 24px rgba(15, 23, 42, 0.14)`,
         }}
       >
-        {/* Gradient overlay */}
-        <div
-          className="absolute inset-0 rounded-xl opacity-[0.03] dark:opacity-[0.06] pointer-events-none"
-          style={{
-            background: `linear-gradient(135deg, ${nodeColor}, transparent 60%)`,
-          }}
-        />
-
-        {/* Left Handle (Target) */}
-        <Handle
-          type="target"
-          position={Position.Left}
-          className="!w-2.5 !h-2.5 !border-2 !rounded-full handle-animate"
-          style={{
-            backgroundColor: nodeColor,
-            borderColor: 'white',
-            boxShadow: `0 0 0 2px ${hexToRgba(nodeColor, 0.3)}`,
-          }}
-        />
-
-        {/* Handle label "in" on hover — pill-shaped */}
-        <div className="absolute -left-12 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none">
-          <span className="text-[9px] font-semibold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/30 border border-teal-200 dark:border-teal-700/50 px-2 py-0.5 rounded-full shadow-sm">
-            in
-          </span>
-        </div>
-
-        {/* Content */}
-        <div className="relative flex items-center gap-3 min-w-0">
-          {/* Emoji display (large, replaces image thumbnail) */}
-          {hasEmoji && !hasImage && (
-            <span className="text-2xl flex-shrink-0 select-none mr-1" role="img" aria-label="node emoji">
-              {data.emoji}
-            </span>
-          )}
-
-          {/* Image thumbnail (larger, rounded-full) */}
-          {hasImage && (
-            <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-gray-100 dark:ring-neutral-600 shadow-sm">
-              <img
-                src={data.imageUrl as string}
-                alt={data.label}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
+        <div className={`flex ${isCircle ? 'flex-col items-center gap-2' : 'items-center gap-3'}`}>
+          {data.emoji ? <span className="text-lg">{data.emoji}</span> : null}
+          <div className={`min-w-0 ${isCircle ? '' : 'flex-1'}`}>
+            <div className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+              {data.label}
             </div>
-          )}
-
-          {/* Label with smoother fade truncation */}
-          <span
-            className={`${hasEmoji && !hasImage ? 'text-[13px]' : 'text-sm'} font-semibold text-gray-800 dark:text-gray-100 ${hasEmoji && !hasImage ? 'max-w-[140px]' : 'max-w-[180px]'} truncate select-none`}
-            style={{
-              maskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
-              WebkitMaskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
-            }}
-          >
-            {data.label}
-          </span>
-
-          {/* Edge count badge */}
-          {edgeCount > 0 && (
-            <div
-              className="flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-              style={{ backgroundColor: hexToRgba(nodeColor, 0.7) }}
-            >
-              {edgeCount}
+            <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+              {data.edgeCount ?? 0} connection{(data.edgeCount ?? 0) === 1 ? '' : 's'}
             </div>
-          )}
-        </div>
-
-        {/* Edit icon button (appears on hover) — teal ring effect */}
-        <button
-          className="absolute -top-2 -right-2 size-6 rounded-full bg-white dark:bg-neutral-700 shadow-md border border-gray-200 dark:border-neutral-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-teal-50 dark:hover:bg-teal-900/40 hover:border-teal-300 dark:hover:border-teal-600 hover:shadow-teal-200/50 dark:hover:shadow-teal-800/30 hover:ring-2 hover:ring-teal-200 dark:hover:ring-teal-700/50 z-10"
-          onClick={(e) => {
-            e.stopPropagation();
-            const event = new CustomEvent('node-edit-click', { detail: { nodeId: id } });
-            window.dispatchEvent(event);
-          }}
-        >
-          <Pencil className="size-3 text-gray-500 dark:text-gray-400 group-hover:text-teal-600 dark:group-hover:text-teal-400" />
-        </button>
-
-        {/* Right Handle (Source) */}
-        <Handle
-          type="source"
-          position={Position.Right}
-          className="!w-2.5 !h-2.5 !border-2 !rounded-full handle-animate"
-          style={{
-            backgroundColor: nodeColor,
-            borderColor: 'white',
-            boxShadow: `0 0 0 2px ${hexToRgba(nodeColor, 0.3)}`,
-          }}
-        />
-
-        {/* Handle label "out" on hover — pill-shaped */}
-        <div className="absolute -right-12 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none">
-          <span className="text-[9px] font-semibold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/30 border border-teal-200 dark:border-teal-700/50 px-2 py-0.5 rounded-full shadow-sm">
-            out
-          </span>
+          </div>
         </div>
       </div>
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!h-3 !w-3 !border-2 !bg-white"
+        style={{ borderColor: color }}
+      />
     </div>
   );
-
-  // Wrap with tooltip for long labels
-  if (isLongLabel) {
-    return (
-      <TooltipProvider delayDuration={400}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            {nodeContent}
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-xs text-sm">
-            {data.label}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
-  }
-
-  return nodeContent;
 }
 
-/* ─── Inner component that uses useReactFlow (must be inside Provider) ─── */
-function GraphCanvasInner({
+export function CustomEdge({
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  style = {},
+  markerEnd,
+  label,
+  data,
+  animated,
+}: EdgeProps) {
+  const { index = 0, total = 1 } = (data || {}) as { index?: number; total?: number };
+  
+  const offset = (index - (total - 1) / 2) * 45;
+
+  const dx = targetX - sourceX;
+  const dy = targetY - sourceY;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  
+  const nx = distance === 0 ? 0 : -dy / distance;
+  const ny = distance === 0 ? 0 : dx / distance;
+  
+  const centerX = sourceX + dx / 2 + nx * offset;
+  const centerY = sourceY + dy / 2 + ny * offset;
+
+  const controlX = 2 * centerX - sourceX / 2 - targetX / 2;
+  const controlY = 2 * centerY - sourceY / 2 - targetY / 2;
+
+  const edgePath = `M ${sourceX} ${sourceY} Q ${controlX} ${controlY} ${targetX} ${targetY}`;
+  
+  return (
+    <>
+      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} className={animated ? 'react-flow__edge-path animated' : 'react-flow__edge-path'} />
+      {label && (
+        <EdgeLabelRenderer>
+          <div
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%, -50%) translate(${centerX}px,${centerY}px)`,
+              pointerEvents: 'all',
+              background: '#ffffff',
+              padding: '4px 8px',
+              borderRadius: '999px',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: '#0d9488',
+              opacity: 0.92,
+            }}
+            className="nodrag nopan"
+          >
+            {label}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  );
+}
+
+export default function GraphCanvas({
   nodes,
   edges,
   onNodesChange,
   onEdgesChange,
-  onDeleteNode,
-  onDeleteEdge,
   onConnectNew,
-  onNodeDoubleClick,
-  onEdgeContextMenu,
-  onNodeContextMenu,
   onInit,
-  onMove,
   onSelectionChange,
-  showMiniMap = true,
+  nodeShape = 'rectangle',
+  surfaceTheme = 'light',
 }: GraphCanvasProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rfRef = useRef<HTMLDivElement>(null);
-  const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === 'dark';
-  const { screenToFlowPosition } = useReactFlow();
 
-  // Compute edge counts per node
   const edgeCountMap = useMemo(() => {
     const counts: Record<string, number> = {};
-    edges.forEach((e) => {
-      counts[e.source] = (counts[e.source] || 0) + 1;
-      counts[e.target] = (counts[e.target] || 0) + 1;
-    });
+    for (const edge of edges) {
+      counts[edge.source] = (counts[edge.source] || 0) + 1;
+      counts[edge.target] = (counts[edge.target] || 0) + 1;
+    }
     return counts;
   }, [edges]);
 
-  // Augment nodes with edge count
-  const augmentedNodes = useMemo(
+  const graphNodes = useMemo(
     () =>
-      nodes.map((n) => ({
-        ...n,
+      nodes.map((node) => ({
+        ...node,
         data: {
-          ...n.data,
-          edgeCount: edgeCountMap[n.id] || 0,
+          ...node.data,
+          edgeCount: edgeCountMap[node.id] || 0,
+          shape: nodeShape,
         },
       })) as CustomNodeType[],
-    [nodes, edgeCountMap]
+    [nodes, edgeCountMap, nodeShape]
   );
 
-  // Node types — memoized to avoid re-renders
-  const nodeTypes = useMemo(
-    () => ({
-      customNode: CustomNodeComponent,
-    }),
-    []
-  );
+  const nodeTypes = useMemo(() => ({ customNode: BasicNode }), []);
+  const edgeTypes = useMemo(() => ({ customEdge: CustomEdge }), []);
 
-  // Handle init — expose React Flow instance to parent
-  const handleInit = useCallback(
-    (instance: ReactFlowInstance) => {
-      onInit?.(instance);
-    },
-    [onInit]
-  );
+  const persistPositions = useCallback((positions: Array<{ id: string; posX: number; posY: number }>) => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(async () => {
+      await updateNodePositions(positions).catch(() => undefined);
+    }, 300);
+  }, []);
 
-  // Handle viewport move — report zoom level
-  const handleMove = useCallback(
-    () => {
-      if (onMove) {
-        onMove(1); // Placeholder; we use onMoveEnd for accuracy
-      }
-    },
-    [onMove]
-  );
-
-  // Handle viewport move end — report accurate zoom
-  const handleMoveEnd = useCallback(
-    (_event: unknown, viewport: { zoom: number }) => {
-      onMove?.(viewport.zoom);
-    },
-    [onMove]
-  );
-
-  // Save positions with debounce after drag ends
-  const debouncedSave = useCallback(
-    (changedNodes: CustomNodeType[]) => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-      saveTimeoutRef.current = setTimeout(async () => {
-        try {
-          const positions = changedNodes.map((n) => ({
-            id: n.id,
-            posX: n.position.x,
-            posY: n.position.y,
-          }));
-          await updateNodePositions(positions);
-        } catch {
-          // Silently fail for position saves
-        }
-      }, 400);
-    },
-    []
-  );
-
-  // Cleanup debounce on unmount
   useEffect(() => {
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, []);
 
-  // Track node changes and save positions after drag
-  const handleNodesChange = useCallback(
-    (changes: Parameters<OnNodesChange>[0]) => {
+  const handleNodesChange: OnNodesChange<CustomNodeType> = useCallback(
+    (changes) => {
       onNodesChange(changes);
-
-      // Check if there are position changes
-      const positionChanges = changes.filter(
-        (c) => c.type === 'position' && c.dragging === false
-      );
-      if (positionChanges.length > 0) {
-        const changedNodeIds = new Set(positionChanges.map((c) => c.id));
-        const changedNodes = nodes.filter((n) => changedNodeIds.has(n.id));
-        if (changedNodes.length > 0) {
-          debouncedSave(changedNodes);
+      const movedNodes: Array<{ id: string; posX: number; posY: number }> = [];
+      for (const change of changes) {
+        if (change.type === 'position' && change.dragging === false) {
+          movedNodes.push({
+            id: change.id,
+            posX: change.position?.x ?? 0,
+            posY: change.position?.y ?? 0,
+          });
         }
       }
+
+      if (movedNodes.length > 0) {
+        persistPositions(movedNodes);
+      }
     },
-    [onNodesChange, nodes, debouncedSave]
+    [onNodesChange, persistPositions]
   );
 
-  // Handle new connection from handle dragging
   const handleConnect = useCallback(
     (connection: Connection) => {
-      if (onConnectNew) {
-        onConnectNew(connection);
-      }
+      onConnectNew?.(connection);
     },
     [onConnectNew]
   );
 
-  // Handle node double-click
-  const handleNodeDoubleClick: NodeMouseHandler = useCallback(
-    (_event, node) => {
-      if (onNodeDoubleClick) {
-        onNodeDoubleClick(node.id);
-      }
-    },
-    [onNodeDoubleClick]
-  );
-
-  // Handle node right-click context menu
-  const handleNodeContextMenu: NodeMouseHandler = useCallback(
-    (event, node) => {
-      event.preventDefault();
-      if (onNodeContextMenu) {
-        onNodeContextMenu(event as unknown as React.MouseEvent, node);
-      }
-    },
-    [onNodeContextMenu]
-  );
-
-  // Handle edge right-click context menu
-  const handleEdgeContextMenu: EdgeMouseHandler = useCallback(
-    (event, edge) => {
-      event.preventDefault();
-      if (onEdgeContextMenu) {
-        onEdgeContextMenu(event as unknown as React.MouseEvent, edge);
-      }
-    },
-    [onEdgeContextMenu]
+  const handleNodeClick: NodeMouseHandler = useCallback(
+    (_event, _node) => undefined,
+    []
   );
 
   return (
-    <div ref={rfRef} className="w-full h-full">
+    <div className={`h-full w-full rounded-2xl border shadow-xl ${surfaceTheme === 'dark' ? 'border-neutral-800 bg-neutral-950' : 'border-slate-200 bg-white'}`}>
       <ReactFlow
-        nodes={augmentedNodes}
+        nodes={graphNodes}
         edges={edges}
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
-        onNodeDoubleClick={handleNodeDoubleClick}
-        onNodeContextMenu={handleNodeContextMenu}
-        onEdgeContextMenu={handleEdgeContextMenu}
-        onInit={handleInit}
-        onMove={handleMove}
-        onMoveEnd={handleMoveEnd}
+        onInit={onInit}
+        onNodeClick={handleNodeClick}
         onSelectionChange={onSelectionChange}
         nodeTypes={nodeTypes}
-        selectionOnDrag={true}
-        selectNodesOnDrag={false}
-        selectionKeyCode="Shift"
-        fitView
-        fitViewOptions={{ padding: 0.3 }}
-        zoomOnDoubleClick={false}
-        minZoom={0.2}
+        edgeTypes={edgeTypes}
+        minZoom={0.25}
         maxZoom={2}
         defaultEdgeOptions={{
           type: 'smoothstep',
           animated: true,
-          style: { stroke: TEAL, strokeWidth: 2 },
-          labelStyle: { fill: TEAL, fontSize: 11, fontWeight: 600 },
-          labelBgStyle: { fill: isDark ? '#1c1f26' : '#ffffff', fillOpacity: 0.9 },
-          labelBgPadding: [8, 4] as [number, number],
+          style: { stroke: TEAL, strokeWidth: 2, strokeDasharray: EDGE_DASH },
+          labelStyle: { fill: TEAL, fontSize: 12, fontWeight: 600 },
+          labelBgStyle: { fill: '#ffffff', fillOpacity: 0.92 },
+          labelBgPadding: [8, 4],
           labelBgBorderRadius: 999,
-          labelBgClass: 'kg-edge-label-bg',
         }}
-        proOptions={{ hideAttribution: true }}
-        className={!isDark ? '!bg-gradient-to-br !from-gray-50 !via-stone-50 !to-gray-100 react-flow-canvas-light' : 'react-flow-canvas-dark react-flow-selection-box-dark'}
       >
         <Background
           variant={BackgroundVariant.Dots}
           gap={24}
           size={1}
-          color={isDark ? '#374151' : '#d1d5db'}
+          color={surfaceTheme === 'dark' ? '#334155' : '#cbd5e1'}
+          bgColor={surfaceTheme === 'dark' ? '#0a0f1a' : '#ffffff'}
         />
-        <Controls
-          className={`!shadow-md ${!isDark ? '!bg-white !border-gray-200 [&>button]:!border-gray-200' : '!bg-neutral-800/90 !border-neutral-700/50 [&>button]:!border-neutral-700/50'} [&>button]:!rounded-md [&>button]:!w-8 [&>button]:!h-8`}
-          showInteractive={false}
+        <MiniMap
+          pannable
+          zoomable
+          maskColor={surfaceTheme === 'dark' ? 'rgba(15, 23, 42, 0.4)' : 'rgba(15, 23, 42, 0.08)'}
+          nodeColor={(node) => (node.data as CustomNodeData).color || TEAL}
         />
-        {showMiniMap && (
-          <MiniMap
-            className={`!shadow-md ${!isDark ? '!bg-white !border-gray-200' : '!bg-neutral-800/90 !border-neutral-700/50'}`}
-            nodeColor={(node) => {
-              const data = node.data as CustomNodeData;
-              return data?.color || TEAL;
-            }}
-            maskColor={isDark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.08)'}
-            pannable
-            zoomable
-          />
-        )}
+        <Controls showInteractive={false} />
       </ReactFlow>
     </div>
   );
 }
 
-/* ─── Main GraphCanvas wrapper ─── */
-export default function GraphCanvas(props: GraphCanvasProps) {
-  return <GraphCanvasInner {...props} />;
-}
+export function mapApiToReactFlow(data: GraphData): { nodes: CustomNodeType[]; edges: Edge[] } {
+  const edgeGroups: Record<string, number> = {};
+  data.edges.forEach((e) => {
+    const key = [e.source, e.target].sort().join('-');
+    edgeGroups[key] = (edgeGroups[key] || 0) + 1;
+  });
 
-/* ─── Helper to convert raw API graph data to React Flow format ─── */
-export function mapApiToReactFlow(data: GraphData): {
-  nodes: CustomNodeType[];
-  edges: Edge[];
-} {
+  const edgeCounters: Record<string, number> = {};
+
   return {
-    nodes: data.nodes.map((n) => ({
-      id: n.id,
+    nodes: data.nodes.map((node) => ({
+      id: node.id,
       type: 'customNode',
-      position: n.position,
+      position: node.position,
       data: {
-        label: n.data.label,
-        imageUrl: n.data.imageUrl,
-        emoji: n.data.emoji,
-        color: n.data.color,
+        label: node.data.label,
+        imageUrl: node.data.imageUrl,
+        emoji: node.data.emoji,
+        color: node.data.color || TEAL,
       },
     })) as CustomNodeType[],
-    edges: data.edges.map((e) => {
-      const lineStyle = (e.lineStyle as string) || 'solid';
-      const thickness = (e.thickness as number) || 2;
-      const dashArray = lineStyle === 'dashed' ? '8 4' : lineStyle === 'dotted' ? '2 4' : undefined;
+    edges: data.edges.map((edge) => {
+      const key = [edge.source, edge.target].sort().join('-');
+      const total = edgeGroups[key];
+      const index = edgeCounters[key] || 0;
+      edgeCounters[key] = index + 1;
+
       return {
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        label: e.label,
-        type: e.type || 'smoothstep',
-        animated: e.animated !== false,
-        style: {
-          stroke: TEAL,
-          strokeWidth: thickness,
-          ...(dashArray ? { strokeDasharray: dashArray } : {}),
-        },
-        labelStyle: e.labelStyle || {
-          fill: TEAL,
-          fontSize: 12,
-          fontWeight: 600,
-        },
-        labelBgStyle: e.labelBgStyle || {
-          fill: '#ffffff',
-          fillOpacity: 0.9,
-        },
-        labelBgPadding: e.labelBgPadding || ([8, 4] as [number, number]),
-        labelBgBorderRadius: e.labelBgBorderRadius || 999,
-        labelBgClass: 'kg-edge-label-bg',
-        edgeType: (e.edgeType as string) || 'smoothstep',
-        lineStyle,
-        thickness,
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        label: edge.label,
+        type: total > 1 ? 'customEdge' : (edge.type || 'smoothstep'),
+        animated: edge.animated !== false,
+        data: { index, total },
+        style: edge.style || { stroke: TEAL, strokeWidth: 2, strokeDasharray: EDGE_DASH },
+        labelStyle: edge.labelStyle || { fill: TEAL, fontSize: 12, fontWeight: 600 },
+        labelBgStyle: edge.labelBgStyle || { fill: '#ffffff', fillOpacity: 0.92 },
+        labelBgPadding: edge.labelBgPadding || [8, 4],
+        labelBgBorderRadius: edge.labelBgBorderRadius || 999,
       };
     }),
   };
