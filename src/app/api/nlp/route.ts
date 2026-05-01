@@ -5,8 +5,9 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 // Primary model + fallbacks if rate-limited
 const MODELS = [
-  'openrouter/free',
+  'openai/gpt-4o-mini',
   'nvidia/nemotron-3-super-120b-a12b:free',
+  'openrouter/free',
 ];
 
 const MAX_RETRIES = 3;
@@ -169,6 +170,13 @@ export async function POST(request: NextRequest) {
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       for (const model of MODELS) {
         requestBody.model = model;
+
+        if (model === 'openai/gpt-4o-mini') {
+          (requestBody as any).response_format = { type: 'json_object' };
+        } else {
+          delete (requestBody as any).response_format;
+        }
+
         console.log(`[NLP] Attempt ${attempt + 1}: Sending request to ${model}...`);
 
         try {
